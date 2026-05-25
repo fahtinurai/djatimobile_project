@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:djatimobile_project/navigation/main_navigation.dart';
+import 'package:djatimobile_project/core/services/auth_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -9,33 +10,71 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final TextEditingController _userIdController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+
+  bool _isLoading = false;
 
   @override
   void dispose() {
-    _userIdController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  void _login() {
-    String input = _userIdController.text.trim().toUpperCase();
+  Future<void> _login() async {
+    final String username = _usernameController.text.trim();
+    final String password = _passwordController.text.trim();
 
-    if (input.isEmpty || _passwordController.text.isEmpty) {
+    if (username.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("User ID dan Password wajib diisi")),
+        const SnackBar(content: Text("Username dan Password wajib diisi")),
       );
       return;
     }
 
-    // ROLE SIMPLE (sementara)
-    String role = input.contains("ME") ? "MECHANIC" : "OPERATOR";
+    setState(() => _isLoading = true);
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => MainNavigation(userRole: role)),
-    );
+    try {
+      final result = await AuthService.login(username, password);
+
+      final int statusCode = result['statusCode'];
+      final Map<String, dynamic> data = result['data'];
+
+      print("STATUS: $statusCode");
+      print("BODY: $data");
+
+      if (statusCode == 200 && data['token'] != null) {
+        final String role = data['user']['role'];
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Login berhasil")),
+        );
+
+        if (!mounted) return;
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => MainNavigation(userRole: role),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data['message'] ?? "Login gagal")),
+        );
+      }
+    } catch (e) {
+      print("ERROR: $e");
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Gagal koneksi ke server")),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -59,10 +98,18 @@ class _LoginPageState extends State<LoginPage> {
             const SizedBox(height: 40),
 
             TextField(
-              controller: _userIdController,
+              controller: _usernameController,
+              style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
-                labelText: "User ID",
+                labelText: "Username",
+                labelStyle: TextStyle(color: Colors.white70),
                 border: OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white38),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFFF9A825)),
+                ),
               ),
             ),
 
@@ -71,9 +118,17 @@ class _LoginPageState extends State<LoginPage> {
             TextField(
               controller: _passwordController,
               obscureText: true,
+              style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
-                labelText: "Password",
+                labelText: "Access Key",
+                labelStyle: TextStyle(color: Colors.white70),
                 border: OutlineInputBorder(),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white38),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFFF9A825)),
+                ),
               ),
             ),
 
@@ -86,14 +141,16 @@ class _LoginPageState extends State<LoginPage> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFF9A825),
                 ),
-                onPressed: _login,
-                child: const Text(
-                  "SIGN IN",
-                  style: TextStyle(
-                    color: Colors.black,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                onPressed: _isLoading ? null : _login,
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.black)
+                    : const Text(
+                        "SIGN IN",
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
               ),
             ),
           ],

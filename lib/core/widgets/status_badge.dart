@@ -1,32 +1,92 @@
 import 'package:flutter/material.dart';
 
 class StatusBadge extends StatelessWidget {
-  final String title;
-  final Color color;
+  final String? status;
 
   const StatusBadge({
     super.key,
-    required this.title,
-    required this.color,
+    required this.status,
   });
+
+  String get _label {
+    final value = (status ?? '').toLowerCase();
+
+    switch (value) {
+      case 'menunggu':
+      case 'waiting':
+      case 'reported':
+        return 'Reported';
+
+      case 'diproses':
+      case 'in_progress':
+      case 'in progress':
+        return 'In Progress';
+
+      case 'menunggu_sparepart':
+      case 'waiting_parts':
+      case 'waiting parts':
+        return 'Waiting Parts';
+
+      case 'selesai':
+      case 'completed':
+        return 'Completed';
+
+      case 'canceled':
+      case 'cancelled':
+        return 'Canceled';
+
+      default:
+        return status == null || status!.isEmpty ? 'Reported' : status!;
+    }
+  }
+
+  Color get _color {
+    final value = (status ?? '').toLowerCase();
+
+    switch (value) {
+      case 'menunggu':
+      case 'waiting':
+      case 'reported':
+        return Colors.orange;
+
+      case 'diproses':
+      case 'in_progress':
+      case 'in progress':
+        return Colors.blue;
+
+      case 'menunggu_sparepart':
+      case 'waiting_parts':
+      case 'waiting parts':
+        return Colors.redAccent;
+
+      case 'selesai':
+      case 'completed':
+        return Colors.green;
+
+      case 'canceled':
+      case 'cancelled':
+        return Colors.grey;
+
+      default:
+        return Colors.white54;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 4,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(6),
+        color: _color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _color.withOpacity(0.4)),
       ),
       child: Text(
-        title,
+        _label,
         style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.bold,
+          color: _color,
           fontSize: 11,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );

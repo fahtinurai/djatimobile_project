@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 
-// Dashboard
+// Dashboard (Driver)
 import 'package:djatimobile_project/pages/dashboard/analytics_report_page.dart';
 
-// Repair
+// Repair (Driver)
 import 'package:djatimobile_project/pages/repair/repair_status_page.dart';
 import 'package:djatimobile_project/pages/repair/damage_report_page.dart';
 
-// Mechanic
+// Mechanic (Teknisi)
 import 'package:djatimobile_project/pages/mechanic/mechanic_history_page.dart';
 import 'package:djatimobile_project/pages/mechanic/mechanic_flow.dart';
 import 'package:djatimobile_project/pages/mechanic/mechanic_profile_page.dart';
 
-// Profile
+// Profile (General)
 import 'package:djatimobile_project/pages/mechanic/profile_page.dart';
 
 class MainNavigation extends StatefulWidget {
@@ -34,9 +34,12 @@ class _MainNavigationState extends State<MainNavigation> {
   void initState() {
     super.initState();
 
-    final role = widget.userRole.toUpperCase();
+    final role = widget.userRole.toLowerCase();
 
-    if (role == "MECHANIC") {
+    // =========================
+    // TEKNISI
+    // =========================
+    if (role == "teknisi") {
       pages = [
         const MechanicHistoryPage(),
         const MechanicTasksFlow(),
@@ -44,11 +47,25 @@ class _MainNavigationState extends State<MainNavigation> {
       ];
 
       items = const [
-        BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
-        BottomNavigationBarItem(icon: Icon(Icons.assignment), label: 'Tasks'),
-        BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.history),
+          label: 'History',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.assignment),
+          label: 'Tasks',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.person),
+          label: 'Profile',
+        ),
       ];
-    } else {
+    }
+
+    // =========================
+    // DRIVER
+    // =========================
+    else if (role == "driver") {
       pages = [
         const AnalyticsReportPage(),
         const RepairStatusPage(),
@@ -65,8 +82,37 @@ class _MainNavigationState extends State<MainNavigation> {
           icon: Icon(Icons.track_changes),
           label: 'Status',
         ),
-        BottomNavigationBarItem(icon: Icon(Icons.report), label: 'Report'),
-        BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.report),
+          label: 'Report',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.person),
+          label: 'Profile',
+        ),
+      ];
+    }
+
+    // =========================
+    // FALLBACK (role tidak dikenali)
+    // =========================
+    else {
+      pages = const [
+        Scaffold(
+          body: Center(
+            child: Text(
+              "Role tidak dikenali",
+              style: TextStyle(fontSize: 18),
+            ),
+          ),
+        ),
+      ];
+
+      items = const [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.error),
+          label: 'Error',
+        ),
       ];
     }
   }
@@ -74,7 +120,10 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _selectedIndex, children: pages),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: pages,
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         selectedItemColor: const Color(0xFFF9A825),

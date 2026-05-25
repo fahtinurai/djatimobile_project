@@ -3,9 +3,6 @@ import 'package:flutter/material.dart';
 // Auth
 import 'package:djatimobile_project/pages/auth/login_page.dart';
 
-// Navigation
-import 'package:djatimobile_project/navigation/main_navigation.dart';
-
 void main() {
   runApp(const MyApp());
 }
