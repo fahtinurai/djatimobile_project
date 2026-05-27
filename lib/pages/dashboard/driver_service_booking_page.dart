@@ -627,7 +627,7 @@ class _DriverServiceBookingPageState extends State<DriverServiceBookingPage> {
           ..._bookings.map<Widget>((item) {
             final booking = Map<String, dynamic>.from(item as Map);
             return _buildBookingCard(booking);
-          }).toList(),
+          }),
         ],
       ),
     );
@@ -665,7 +665,7 @@ class _DriverServiceBookingPageState extends State<DriverServiceBookingPage> {
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: color.withOpacity(0.35),
+          color: color.withValues(alpha: 0.35),
         ),
       ),
       child: ExpansionTile(
@@ -797,9 +797,9 @@ class _DriverServiceBookingPageState extends State<DriverServiceBookingPage> {
         vertical: 5,
       ),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Text(
         label,
@@ -819,9 +819,9 @@ class _DriverServiceBookingPageState extends State<DriverServiceBookingPage> {
         vertical: 5,
       ),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.06),
+        color: Colors.white.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
       ),
       child: Text(
         label,
@@ -839,9 +839,9 @@ class _DriverServiceBookingPageState extends State<DriverServiceBookingPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.035),
+        color: Colors.white.withValues(alpha: 0.035),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.18)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -888,7 +888,7 @@ class _DriverServiceBookingPageState extends State<DriverServiceBookingPage> {
           Icon(
             Icons.check_circle_outline,
             size: 18,
-            color: color.withOpacity(0.85),
+            color: color.withValues(alpha: 0.85),
           ),
           const SizedBox(width: 10),
           Expanded(

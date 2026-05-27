@@ -282,7 +282,7 @@ class _MechanicProfilePageState extends State<MechanicProfilePage> {
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: Colors.white.withOpacity(0.05),
+          color: Colors.white.withValues(alpha: 0.05),
         ),
       ),
       child: Column(

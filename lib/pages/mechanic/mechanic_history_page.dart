@@ -498,7 +498,7 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
             margin: const EdgeInsets.only(bottom: 16),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: statusColor.withOpacity(0.3)),
+              side: BorderSide(color: statusColor.withValues(alpha: 0.3)),
             ),
             child: Column(
               children: [
@@ -620,7 +620,7 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
                             text: detail,
                           ),
                         );
-                      }).toList(),
+                      }),
                       if (isCompleted && !hasKpi) ...[
                         const SizedBox(height: 16),
                         SizedBox(

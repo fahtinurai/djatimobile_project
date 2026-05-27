@@ -387,7 +387,7 @@ class _MechanicTasksPageState extends State<MechanicTasksPage> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                   side: BorderSide(
-                    color: statusColor.withOpacity(0.35),
+                    color: statusColor.withValues(alpha: 0.35),
                   ),
                 ),
                 child: ListTile(
@@ -466,10 +466,10 @@ class _MechanicTasksPageState extends State<MechanicTasksPage> {
                             vertical: 5,
                           ),
                           decoration: BoxDecoration(
-                            color: statusColor.withOpacity(0.12),
+                            color: statusColor.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: statusColor.withOpacity(0.25),
+                              color: statusColor.withValues(alpha: 0.25),
                             ),
                           ),
                           child: Text(
@@ -822,9 +822,9 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.12),
+                color: statusColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: statusColor.withOpacity(0.25)),
+                border: Border.all(color: statusColor.withValues(alpha: 0.25)),
               ),
               child: Text(
                 status,
@@ -946,7 +946,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.04)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.04)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

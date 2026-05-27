@@ -347,7 +347,7 @@ class _AnalyticsReportPageState extends State<AnalyticsReportPage> {
                   color,
                   info,
                 );
-              }).toList(),
+              }),
           ],
         ),
       ),
@@ -504,7 +504,7 @@ class _AnalyticsReportPageState extends State<AnalyticsReportPage> {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
+                  color: color.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(

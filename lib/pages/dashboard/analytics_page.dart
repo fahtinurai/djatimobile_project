@@ -163,7 +163,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: const Color(0xFFF9A825).withOpacity(0.4),
+          color: const Color(0xFFF9A825).withValues(alpha: 0.4),
         ),
       ),
       child: Column(
@@ -207,7 +207,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.white.withOpacity(0.05),
+          color: Colors.white.withValues(alpha: 0.05),
         ),
       ),
       child: const Center(
@@ -234,7 +234,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.white.withOpacity(0.05),
+          color: Colors.white.withValues(alpha: 0.05),
         ),
       ),
       child: Row(

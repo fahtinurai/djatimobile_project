@@ -628,9 +628,9 @@ class TaskDetailPage extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: statusColor.withOpacity(0.15),
+                color: statusColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: statusColor.withOpacity(0.3)),
+                border: Border.all(color: statusColor.withValues(alpha: 0.3)),
               ),
               child: Text(
                 status,
@@ -813,7 +813,7 @@ class TaskDetailPage extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: statusColor.withOpacity(0.25)),
+        border: Border.all(color: statusColor.withValues(alpha: 0.25)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -856,7 +856,7 @@ class TaskDetailPage extends StatelessWidget {
       decoration: BoxDecoration(
         color: highlight ? Colors.white10 : const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.04)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.04)),
       ),
       child: Text(
         value.isEmpty ? "-" : value,
@@ -878,7 +878,7 @@ class TaskDetailPage extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFF1E1E1E),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.04)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.04)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
