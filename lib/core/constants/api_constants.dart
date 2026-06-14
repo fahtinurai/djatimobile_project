@@ -1,13 +1,12 @@
 class ApiConstants {
-  // BASE URL
-  static const String baseUrl = "http://10.0.2.2:8000/api";
+  static const String baseUrl = "http://192.168.18.195:8000/api";
 
   // AUTH
   static const String login = "/login";
   static const String logout = "/logout";
   static const String me = "/me";
 
-  // USER (kalau nanti dipakai)
+  // USER
   static const String users = "/users";
 
   // REPAIR

@@ -1,3 +1,19 @@
+/*
+|--------------------------------------------------------------------------
+| MECHANIC HISTORY PAGE
+|--------------------------------------------------------------------------
+|
+| Penyesuaian utama:
+| - Struktur halaman history tetap sama.
+| - History tetap mengambil service_jobs?status=all.
+| - Riwayat sparepart tetap ditampilkan.
+| - Initial hour meter tidak ditimpa.
+| - Teknisi input data terbaru hanya saat complete job di mechanic_flow.dart.
+| - History hanya menampilkan hasil, tidak menginput ulang data maintenance.
+| - Backend yang sebaiknya menghitung MA, MTTR, MTBF dan update vehicle.
+|
+*/
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -17,7 +33,7 @@ class MechanicHistoryPage extends StatefulWidget {
 }
 
 class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
-  static const String baseUrl = "http://10.0.2.2:8000/api";
+  static const String baseUrl = "http://192.168.18.195:8000/api";
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -25,6 +41,17 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
 
   List<dynamic> _jobs = [];
   List<dynamic> _partUsages = [];
+
+  String _searchQuery = "";
+  String _selectedFilter = "all";
+
+  final List<String> _filters = const [
+    "all",
+    "completed",
+    "in_progress",
+    "ready",
+    "canceled",
+  ];
 
   @override
   void initState() {
@@ -242,11 +269,11 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
     var path = raw.replaceAll("\\", "/");
 
     if (path.startsWith("/storage/")) {
-      return "http://10.0.2.2:8000$path";
+      return "http://192.168.18.195:8000$path";
     }
 
     if (path.startsWith("storage/")) {
-      return "http://10.0.2.2:8000/$path";
+      return "http://192.168.18.195:8000/$path";
     }
 
     if (path.startsWith("public/")) {
@@ -257,7 +284,7 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
       path = path.substring(1);
     }
 
-    return "http://10.0.2.2:8000/storage/$path";
+    return "http://192.168.18.195:8000/storage/$path";
   }
 
   String? _getDamageImageUrl(Map<String, dynamic> job) {
@@ -339,6 +366,91 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
     return driver["name"]?.toString() ??
         driver["username"]?.toString() ??
         "Unknown Driver";
+  }
+
+  String _formatNumber(dynamic value) {
+    if (value == null) return "-";
+
+    final text = value.toString().trim();
+
+    if (text.isEmpty || text == "null") return "-";
+
+    final number = double.tryParse(text.replaceAll(",", "."));
+
+    if (number == null) return text;
+
+    if (number % 1 == 0) {
+      return number.toInt().toString();
+    }
+
+    return number.toStringAsFixed(2);
+  }
+
+  dynamic _firstAvailableValue(List<dynamic> values) {
+    for (final value in values) {
+      if (value == null) continue;
+
+      final text = value.toString().trim();
+
+      if (text.isNotEmpty && text != "null") {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
+  String _getInitialHourMeter(Map<String, dynamic> job) {
+    final vehicle = _getVehicle(job);
+    final report = _getDamageReport(job);
+
+    return _formatNumber(
+      _firstAvailableValue([
+        vehicle?["initial_hour_meter"],
+        vehicle?["initial_kpi"],
+        report?["vehicle_initial_hour_meter"],
+        report?["vehicle_initial_kpi"],
+        job["initial_hour_meter"],
+        job["initial_kpi"],
+      ]),
+    );
+  }
+
+  String _getCurrentHourMeter(Map<String, dynamic> job) {
+    final vehicle = _getVehicle(job);
+    final report = _getDamageReport(job);
+
+    return _formatNumber(
+      _firstAvailableValue([
+        job["final_hour_meter"],
+        job["current_hour_meter"],
+        job["latest_hour_meter"],
+        vehicle?["current_hour_meter"],
+        vehicle?["latest_hour_meter"],
+        vehicle?["final_hour_meter"],
+        report?["vehicle_current_hour_meter"],
+        vehicle?["initial_hour_meter"],
+        vehicle?["initial_kpi"],
+      ]),
+    );
+  }
+
+  String _getCurrentMa(Map<String, dynamic> job) {
+    final vehicle = _getVehicle(job);
+
+    final value = _firstAvailableValue([
+      job["ma"],
+      job["current_ma"],
+      vehicle?["current_ma"],
+      vehicle?["ma"],
+      vehicle?["mechanical_availability"],
+    ]);
+
+    final formatted = _formatNumber(value);
+
+    if (formatted == "-") return "-";
+
+    return "$formatted%";
   }
 
   String _formatDateTime(dynamic value) {
@@ -495,12 +607,6 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
     return number > 0;
   }
 
-  bool _hasKpi(Map<String, dynamic> job) {
-    return _isValidKpiValue(job["mttr"]) ||
-        _isValidKpiValue(job["mtbf"]) ||
-        _isValidKpiValue(job["ma"]);
-  }
-
   String _formatKpi(dynamic value, {int fractionDigits = 2}) {
     if (value == null) return "-";
 
@@ -527,6 +633,48 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
     final noteAdmin = job["note_admin"]?.toString() ?? "-";
     final noteTechnician = job["note_technician"]?.toString() ?? "-";
 
+    final initialHourMeter = _getInitialHourMeter(job);
+    final currentHourMeter = _getCurrentHourMeter(job);
+    final currentMa = _getCurrentMa(job);
+
+    final totalRepairTime = _formatNumber(
+      _firstAvailableValue([
+        job["total_repair_time"],
+        job["repair_time"],
+        job["repair_time_hours"],
+      ]),
+    );
+
+    final totalOperationalTime = _formatNumber(
+      _firstAvailableValue([
+        job["total_operational_time"],
+        job["operational_time"],
+        job["operational_time_hours"],
+      ]),
+    );
+
+    final failureCount = _formatNumber(
+      _firstAvailableValue([
+        job["failure_count"],
+        job["number_of_failures"],
+        job["failures"],
+      ]),
+    );
+
+    final actualOperatingHours = _formatNumber(
+      _firstAvailableValue([
+        job["actual_operating_hours"],
+        job["actual_operation_hours"],
+      ]),
+    );
+
+    final breakdownHours = _formatNumber(
+      _firstAvailableValue([
+        job["breakdown_hours"],
+        job["breakdown_time"],
+      ]),
+    );
+
     if (damageType != "-") {
       details.add("Jenis kerusakan: $damageType");
     }
@@ -551,6 +699,14 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
       details.add("Catatan admin: $noteAdmin");
     }
 
+    if (initialHourMeter != "-") {
+      details.add("Initial hour meter: $initialHourMeter");
+    }
+
+    if (currentHourMeter != "-") {
+      details.add("Current hour meter: $currentHourMeter");
+    }
+
     if (startedAt != "-") {
       details.add("Mulai dikerjakan: $startedAt");
     }
@@ -563,16 +719,38 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
       details.add("Catatan teknisi: $noteTechnician");
     }
 
+    if (totalRepairTime != "-") {
+      details.add("Total repair time: $totalRepairTime jam");
+    }
+
+    if (totalOperationalTime != "-") {
+      details.add("Total operational time: $totalOperationalTime jam");
+    }
+
+    if (failureCount != "-") {
+      details.add("Number of failures: $failureCount");
+    }
+
+    if (actualOperatingHours != "-") {
+      details.add("Actual operating hours: $actualOperatingHours jam");
+    }
+
+    if (breakdownHours != "-") {
+      details.add("Breakdown hours: $breakdownHours jam");
+    }
+
     if (_isValidKpiValue(job["mttr"])) {
-      details.add("MTTR: ${_formatKpi(job["mttr"])} hrs");
+      details.add("MTTR hasil backend: ${_formatKpi(job["mttr"])} hrs");
     }
 
     if (_isValidKpiValue(job["mtbf"])) {
-      details.add("MTBF: ${_formatKpi(job["mtbf"])} hrs");
+      details.add("MTBF hasil backend: ${_formatKpi(job["mtbf"])} hrs");
     }
 
     if (_isValidKpiValue(job["ma"])) {
-      details.add("MA: ${_formatKpi(job["ma"], fractionDigits: 1)}%");
+      details.add("MA hasil backend: ${_formatKpi(job["ma"], fractionDigits: 1)}%");
+    } else if (currentMa != "-") {
+      details.add("MA terbaru kendaraan: $currentMa");
     }
 
     details.add("Status akhir: $status");
@@ -580,18 +758,718 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
     return details;
   }
 
-  void _showKpiForm(BuildContext context, Map<String, dynamic> job) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => UpdateKpiModal(
-        job: job,
-        unitName: _getUnitName(job),
-        onSuccess: _loadServiceJobs,
+
+  IconData _getStatusIcon(String status) {
+    switch (status.toLowerCase()) {
+      case "approved":
+      case "ready to start":
+        return Icons.play_circle_outline_rounded;
+
+      case "rescheduled":
+        return Icons.update_rounded;
+
+      case "in_progress":
+      case "in progress":
+        return Icons.autorenew_rounded;
+
+      case "completed":
+      case "finished":
+      case "selesai":
+        return Icons.check_circle_rounded;
+
+      case "canceled":
+      case "cancelled":
+      case "dibatalkan":
+        return Icons.cancel_rounded;
+
+      case "requested":
+        return Icons.hourglass_top_rounded;
+
+      default:
+        return Icons.info_outline_rounded;
+    }
+  }
+
+  List<Map<String, dynamic>> get _mappedJobs {
+    return _jobs
+        .map((item) => _asMap(item))
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+
+  bool _matchesFilter(Map<String, dynamic> job) {
+    if (_selectedFilter == "all") return true;
+
+    final status = job["status"]?.toString().toLowerCase() ?? "";
+
+    if (_selectedFilter == "completed") {
+      return status == "completed" || status == "finished" || status == "selesai";
+    }
+
+    if (_selectedFilter == "in_progress") {
+      return status == "in_progress";
+    }
+
+    if (_selectedFilter == "ready") {
+      return status == "approved" || status == "scheduled" || status == "rescheduled";
+    }
+
+    if (_selectedFilter == "canceled") {
+      return status == "canceled" ||
+          status == "cancelled" ||
+          status == "dibatalkan";
+    }
+
+    return true;
+  }
+
+  List<Map<String, dynamic>> get _filteredJobs {
+    final keyword = _searchQuery.trim().toLowerCase();
+
+    return _mappedJobs.where((job) {
+      final unit = _getUnitName(job).toLowerCase();
+      final plate = _getPlateNumber(job).toLowerCase();
+      final driver = _getDriverName(job).toLowerCase();
+      final damage = _getDamageType(job).toLowerCase();
+      final status = _getStatusLabel(job["status"]?.toString() ?? "-").toLowerCase();
+
+      final matchesSearch = keyword.isEmpty ||
+          unit.contains(keyword) ||
+          plate.contains(keyword) ||
+          driver.contains(keyword) ||
+          damage.contains(keyword) ||
+          status.contains(keyword);
+
+      return matchesSearch && _matchesFilter(job);
+    }).toList();
+  }
+
+  int _countStatus(List<String> statuses) {
+    return _mappedJobs.where((job) {
+      final status = job["status"]?.toString().toLowerCase() ?? "";
+      return statuses.contains(status);
+    }).length;
+  }
+
+  String _filterLabel(String value) {
+    switch (value) {
+      case "all":
+        return "All";
+      case "completed":
+        return "Completed";
+      case "in_progress":
+        return "Progress";
+      case "ready":
+        return "Ready";
+      case "canceled":
+        return "Canceled";
+      default:
+        return value;
+    }
+  }
+
+  Widget _buildHeaderDashboard() {
+    final total = _mappedJobs.length;
+    final completed = _countStatus(["completed", "finished", "selesai"]);
+    final progress = _countStatus(["in_progress"]);
+    final parts = _partUsages.length;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFF9A825).withOpacity(0.30),
+            const Color(0xFF1A1D24),
+            const Color(0xFF111827),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(
+          color: const Color(0xFFF9A825).withOpacity(0.20),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.28),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _iconBadge(
+                icon: Icons.history_rounded,
+                color: const Color(0xFFF9A825),
+                size: 54,
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Repair History",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        height: 1.15,
+                      ),
+                    ),
+                    SizedBox(height: 5),
+                    Text(
+                      "Riwayat pekerjaan teknisi, hasil maintenance, dan request sparepart.",
+                      style: TextStyle(
+                        color: Colors.white60,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _summaryTile(
+                  title: "Total",
+                  value: "$total",
+                  icon: Icons.assignment_outlined,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _summaryTile(
+                  title: "Done",
+                  value: "$completed",
+                  icon: Icons.check_circle_outline_rounded,
+                  color: Colors.greenAccent,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _summaryTile(
+                  title: "Progress",
+                  value: "$progress",
+                  icon: Icons.autorenew_rounded,
+                  color: Colors.amberAccent,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _summaryTile(
+                  title: "Parts",
+                  value: "$parts",
+                  icon: Icons.inventory_2_outlined,
+                  color: Colors.lightBlueAccent,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
+
+  Widget _summaryTile({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.055),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.075),
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBox() {
+    return TextField(
+      onChanged: (value) {
+        setState(() {
+          _searchQuery = value;
+        });
+      },
+      cursorColor: const Color(0xFFF9A825),
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.055),
+        hintText: "Cari unit, plat, driver, kerusakan, atau status...",
+        hintStyle: const TextStyle(
+          color: Colors.white30,
+          fontSize: 12,
+        ),
+        prefixIcon: const Icon(
+          Icons.search_rounded,
+          color: Colors.white38,
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(
+            color: Colors.white.withOpacity(0.08),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(
+            color: const Color(0xFFF9A825).withOpacity(0.55),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterChips() {
+    return SizedBox(
+      height: 38,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _filters.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final filter = _filters[index];
+          final selected = filter == _selectedFilter;
+
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedFilter = filter;
+              });
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: selected
+                    ? const Color(0xFFF9A825).withOpacity(0.16)
+                    : Colors.white.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: selected
+                      ? const Color(0xFFF9A825).withOpacity(0.65)
+                      : Colors.white.withOpacity(0.08),
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                _filterLabel(filter),
+                style: TextStyle(
+                  color: selected ? const Color(0xFFF9A825) : Colors.white54,
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildHistoryCard(Map<String, dynamic> job) {
+    final bookingId = job["id"]?.toString() ?? "-";
+    final reportId = job["damage_report_id"]?.toString() ??
+        _getDamageReport(job)?["id"]?.toString() ??
+        "-";
+
+    final unitName = _getUnitName(job);
+    final plateNumber = _getPlateNumber(job);
+    final driverName = _getDriverName(job);
+    final damageType = _getDamageType(job);
+
+    final statusRaw = job["status"]?.toString() ?? "-";
+    final status = _getStatusLabel(statusRaw);
+    final statusColor = _getStatusColor(statusRaw);
+
+    final scheduledAt = _formatDateTime(job["scheduled_at"]);
+    final completedAt = _formatDateTime(job["completed_at"]);
+
+    final repairDetails = _getRepairDetails(job);
+    final isCompleted = _isCompleted(job);
+    final isClosed = _isClosed(job);
+    final partUsages = _getPartUsagesForJob(job);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1D24),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: statusColor.withOpacity(0.28),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 9),
+          ),
+        ],
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          dividerColor: Colors.transparent,
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+        ),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          collapsedIconColor: Colors.white38,
+          iconColor: const Color(0xFFF9A825),
+          leading: _iconBadge(
+            icon: _getStatusIcon(statusRaw),
+            color: statusColor,
+            size: 46,
+          ),
+          title: Text(
+            unitName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+              height: 1.2,
+            ),
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 7),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "$plateNumber • Driver: $driverName",
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  "#BK-$bookingId • #DR-$reportId",
+                  style: const TextStyle(
+                    color: Colors.white30,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: [
+                    _statusChip(status, statusColor),
+                    _miniChip("Damage: $damageType"),
+                    if (completedAt != "-") _miniChip("Completed: $completedAt"),
+                    if (scheduledAt != "-") _miniChip("Schedule: $scheduledAt"),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          trailing: isCompleted
+              ? const Icon(Icons.check_circle_rounded, color: Colors.greenAccent)
+              : Icon(
+                  isClosed ? Icons.block_rounded : Icons.pending_actions_rounded,
+                  color: statusColor,
+                ),
+          children: [
+            _sectionCard(
+              title: "Damage Report",
+              icon: Icons.report_problem_outlined,
+              child: Column(
+                children: [
+                  _textBlock(
+                    title: "Jenis Kerusakan",
+                    value: damageType,
+                    icon: Icons.build_circle_outlined,
+                    color: Colors.orangeAccent,
+                  ),
+                  const SizedBox(height: 10),
+                  _textBlock(
+                    title: "Foto Kerusakan",
+                    value: "Tap gambar untuk melihat ukuran penuh.",
+                    icon: Icons.photo_camera_outlined,
+                    color: Colors.white70,
+                    child: _buildDamageImageSection(job),
+                  ),
+                ],
+              ),
+            ),
+            _sectionCard(
+              title: "Maintenance Details",
+              icon: Icons.fact_check_outlined,
+              child: Column(
+                children: repairDetails.map((detail) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 9),
+                    child: _buildInfoRow(
+                      icon: Icons.check_circle_outline_rounded,
+                      text: detail,
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            _sectionCard(
+              title: "Sparepart Requests",
+              icon: Icons.inventory_2_outlined,
+              child: _buildPartUsageSection(partUsages),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionCard({
+    required String title,
+    required IconData icon,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF20242D).withOpacity(0.86),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.065),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: const Color(0xFFF9A825), size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title.toUpperCase(),
+                  style: const TextStyle(
+                    color: Color(0xFFF9A825),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                    letterSpacing: 1.05,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _textBlock({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+    Widget? child,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.075),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: color.withOpacity(0.14),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title.toUpperCase(),
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value.isEmpty ? "-" : value,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 13,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (child != null) ...[
+            const SizedBox(height: 12),
+            child,
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _statusChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.13),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.30)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w900,
+          fontSize: 11,
+        ),
+      ),
+    );
+  }
+
+  Widget _miniChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withOpacity(0.07)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white60,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _iconBadge({
+    required IconData icon,
+    required Color color,
+    required double size,
+  }) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(size / 3),
+        border: Border.all(color: color.withOpacity(0.28)),
+      ),
+      child: Icon(
+        icon,
+        color: color,
+        size: size * 0.52,
+      ),
+    );
+  }
+
+  Widget _buildNoDataFound() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1D24),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.07)),
+      ),
+      child: Column(
+        children: [
+          _iconBadge(
+            icon: Icons.search_off_rounded,
+            color: Colors.white38,
+            size: 58,
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            "History tidak ditemukan",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            "Coba ubah kata kunci pencarian atau filter status.",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   Widget _buildBody() {
     if (_isLoading) {
@@ -606,32 +1484,64 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.error_outline,
-                color: Colors.redAccent,
-                size: 48,
+          child: Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1D24),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: Colors.redAccent.withOpacity(0.20),
               ),
-              const SizedBox(height: 16),
-              Text(
-                _errorMessage!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _loadServiceJobs,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF9A825),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _iconBadge(
+                  icon: Icons.error_outline_rounded,
+                  color: Colors.redAccent,
+                  size: 58,
                 ),
-                child: const Text(
-                  "Coba Lagi",
-                  style: TextStyle(color: Colors.black),
+                const SizedBox(height: 16),
+                const Text(
+                  "Gagal memuat repair history",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 8),
+                Text(
+                  _errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: ElevatedButton.icon(
+                    onPressed: _loadServiceJobs,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFF9A825),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text(
+                      "Coba Lagi",
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -641,30 +1551,34 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
       return RefreshIndicator(
         onRefresh: _loadServiceJobs,
         color: const Color(0xFFF9A825),
-        backgroundColor: const Color(0xFF1E1E1E),
+        backgroundColor: const Color(0xFF1A1D24),
         child: ListView(
           padding: const EdgeInsets.all(24),
-          children: const [
-            SizedBox(height: 120),
-            Icon(
-              Icons.assignment_outlined,
-              color: Colors.white24,
-              size: 64,
+          children: [
+            const SizedBox(height: 100),
+            _iconBadge(
+              icon: Icons.history_rounded,
+              color: const Color(0xFFF9A825),
+              size: 70,
             ),
-            SizedBox(height: 16),
-            Text(
-              "Belum ada history maintenance.",
+            const SizedBox(height: 18),
+            const Text(
+              "Belum ada history maintenance",
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white54),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-            SizedBox(height: 8),
-            Text(
+            const SizedBox(height: 8),
+            const Text(
               "History akan muncul setelah admin menjadwalkan dan teknisi memproses job.",
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white24,
-                fontSize: 12,
-                height: 1.4,
+                color: Colors.white54,
+                fontSize: 13,
+                height: 1.45,
               ),
             ),
           ],
@@ -672,23 +1586,30 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
       );
     }
 
+    final jobs = _filteredJobs;
+
     return RefreshIndicator(
       onRefresh: _loadServiceJobs,
       color: const Color(0xFFF9A825),
-      backgroundColor: const Color(0xFF1E1E1E),
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: _jobs.length + (_partUsageError != null ? 1 : 0),
-        itemBuilder: (context, index) {
-          if (_partUsageError != null && index == 0) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(12),
+      backgroundColor: const Color(0xFF1A1D24),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+        children: [
+          _buildHeaderDashboard(),
+          const SizedBox(height: 16),
+          _buildSearchBox(),
+          const SizedBox(height: 12),
+          _buildFilterChips(),
+          if (_partUsageError != null) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(13),
               decoration: BoxDecoration(
-                color: Colors.redAccent.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(10),
+                color: Colors.redAccent.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: Colors.redAccent.withValues(alpha: 0.25),
+                  color: Colors.redAccent.withOpacity(0.25),
                 ),
               ),
               child: Text(
@@ -697,200 +1618,17 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
                   color: Colors.redAccent,
                   fontSize: 12,
                   height: 1.4,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            );
-          }
-
-          final jobIndex = _partUsageError != null ? index - 1 : index;
-          final item = _jobs[jobIndex];
-
-          if (item is! Map) return const SizedBox.shrink();
-
-          final job = Map<String, dynamic>.from(item);
-
-          final bookingId = job["id"]?.toString() ?? "-";
-          final reportId = job["damage_report_id"]?.toString() ??
-              _getDamageReport(job)?["id"]?.toString() ??
-              "-";
-
-          final unitName = _getUnitName(job);
-          final plateNumber = _getPlateNumber(job);
-          final driverName = _getDriverName(job);
-          final damageType = _getDamageType(job);
-
-          final statusRaw = job["status"]?.toString() ?? "-";
-          final status = _getStatusLabel(statusRaw);
-          final statusColor = _getStatusColor(statusRaw);
-
-          final scheduledAt = _formatDateTime(job["scheduled_at"]);
-          final completedAt = _formatDateTime(job["completed_at"]);
-
-          final repairDetails = _getRepairDetails(job);
-          final hasKpi = _hasKpi(job);
-          final isCompleted = _isCompleted(job);
-          final isClosed = _isClosed(job);
-
-          final partUsages = _getPartUsagesForJob(job);
-
-          return Card(
-            color: const Color(0xFF1E1E1E),
-            margin: const EdgeInsets.only(bottom: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: statusColor.withValues(alpha: 0.3)),
             ),
-            child: Column(
-              children: [
-                ListTile(
-                  title: Text(
-                    unitName,
-                    style: const TextStyle(
-                      color: Color(0xFFF9A825),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "#BK-$bookingId • #DR-$reportId",
-                          style: const TextStyle(
-                            color: Colors.white38,
-                            fontSize: 11,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          "Plate: $plateNumber",
-                          style: const TextStyle(
-                            color: Colors.white38,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          "Driver: $driverName",
-                          style: const TextStyle(
-                            color: Colors.white38,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          scheduledAt == "-"
-                              ? "Schedule: -"
-                              : "Schedule: $scheduledAt",
-                          style: const TextStyle(
-                            color: Colors.white24,
-                            fontSize: 11,
-                          ),
-                        ),
-                        if (completedAt != "-") ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            "Completed: $completedAt",
-                            style: const TextStyle(
-                              color: Colors.white24,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 8),
-                        Text(
-                          status,
-                          style: TextStyle(
-                            color: statusColor,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  trailing: isCompleted
-                      ? const Icon(
-                          Icons.check_circle,
-                          color: Colors.green,
-                        )
-                      : Icon(
-                          isClosed ? Icons.block : Icons.pending_actions,
-                          color: statusColor,
-                        ),
-                ),
-                const Divider(
-                  color: Colors.white10,
-                  indent: 16,
-                  endIndent: 16,
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Laporan Kerusakan Driver:",
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _buildInfoRow(
-                        icon: Icons.report_problem_outlined,
-                        text: "Jenis: $damageType",
-                      ),
-                      const SizedBox(height: 12),
-                      _buildDamageImageSection(job),
-                      const SizedBox(height: 16),
-                      const Text(
-                        "Maintenance Details:",
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...repairDetails.map<Widget>((detail) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: _buildInfoRow(
-                            icon: Icons.build,
-                            text: detail,
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 16),
-                      _buildPartUsageSection(partUsages),
-                      if (isCompleted && !hasKpi) ...[
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFF9A825),
-                            ),
-                            onPressed: () => _showKpiForm(context, job),
-                            child: const Text(
-                              "INPUT KPI",
-                              style: TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+          ],
+          const SizedBox(height: 18),
+          if (jobs.isEmpty)
+            _buildNoDataFound()
+          else
+            ...jobs.map((job) => _buildHistoryCard(job)),
+        ],
       ),
     );
   }
@@ -916,10 +1654,10 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
             height: 130,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.035),
+              color: Colors.white.withOpacity( 0.035),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.06),
+                color: Colors.white.withOpacity( 0.06),
               ),
             ),
             child: const Text(
@@ -951,7 +1689,7 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
                         width: double.infinity,
                         height: 170,
                         alignment: Alignment.center,
-                        color: Colors.white.withValues(alpha: 0.04),
+                        color: Colors.white.withOpacity( 0.04),
                         child: const CircularProgressIndicator(
                           color: Color(0xFFF9A825),
                         ),
@@ -963,10 +1701,10 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
                         height: 130,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.035),
+                          color: Colors.white.withOpacity( 0.035),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.06),
+                            color: Colors.white.withOpacity( 0.06),
                           ),
                         ),
                         child: const Text(
@@ -988,7 +1726,7 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
                         vertical: 5,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.55),
+                        color: Colors.black.withOpacity( 0.55),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Row(
@@ -1056,10 +1794,10 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.035),
+                color: Colors.white.withOpacity( 0.035),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: color.withValues(alpha: 0.25),
+                  color: color.withOpacity( 0.25),
                 ),
               ),
               child: Column(
@@ -1130,426 +1868,50 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: const Color(0xFF0F1115),
       appBar: AppBar(
         automaticallyImplyLeading: false,
         title: const Text(
           "Repair History",
           style: TextStyle(
             color: Color(0xFFF9A825),
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w900,
           ),
         ),
-        backgroundColor: Colors.transparent,
+        centerTitle: false,
+        backgroundColor: const Color(0xFF0F1115),
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: "Refresh",
+            onPressed: _loadServiceJobs,
+            icon: const Icon(
+              Icons.refresh_rounded,
+              color: Color(0xFFF9A825),
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
       ),
-      body: _buildBody(),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Color(0xFF0F1115),
+              Color(0xFF111827),
+              Color(0xFF0F1115),
+            ],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: _buildBody(),
+      ),
     );
   }
 }
 
-// -------------------------------------------------------------------
-// 2. MODAL INPUT KPI UNTUK JOB YANG SUDAH COMPLETED
-// -------------------------------------------------------------------
-class UpdateKpiModal extends StatefulWidget {
-  final Map<String, dynamic> job;
-  final String unitName;
-  final Future<void> Function() onSuccess;
-
-  const UpdateKpiModal({
-    super.key,
-    required this.job,
-    required this.unitName,
-    required this.onSuccess,
-  });
-
-  @override
-  State<UpdateKpiModal> createState() => _UpdateKpiModalState();
-}
-
-class _UpdateKpiModalState extends State<UpdateKpiModal> {
-  static const String baseUrl = "http://10.0.2.2:8000/api";
-
-  final TextEditingController _noteController = TextEditingController();
-
-  final TextEditingController _repairTime = TextEditingController();
-  final TextEditingController _failures = TextEditingController();
-  final TextEditingController _opTime = TextEditingController();
-  final TextEditingController _actualOp = TextEditingController();
-  final TextEditingController _breakdown = TextEditingController();
-
-  bool _isSubmitting = false;
-
-  double mttr = 0;
-  double mtbf = 0;
-  double ma = 0;
-
-  @override
-  void initState() {
-    super.initState();
-
-    final existingNote = widget.job["note_technician"]?.toString();
-
-    if (existingNote != null && existingNote.trim().isNotEmpty) {
-      _noteController.text = existingNote;
-    }
-
-    mttr = double.tryParse(widget.job["mttr"]?.toString() ?? "") ?? 0;
-    mtbf = double.tryParse(widget.job["mtbf"]?.toString() ?? "") ?? 0;
-    ma = double.tryParse(widget.job["ma"]?.toString() ?? "") ?? 0;
-  }
-
-  @override
-  void dispose() {
-    _noteController.dispose();
-    _repairTime.dispose();
-    _failures.dispose();
-    _opTime.dispose();
-    _actualOp.dispose();
-    _breakdown.dispose();
-    super.dispose();
-  }
-
-  int _getBookingId() {
-    final rawId = widget.job["id"];
-
-    if (rawId is int) return rawId;
-
-    final parsed = int.tryParse(rawId?.toString() ?? "");
-
-    if (parsed == null) {
-      throw Exception("ID booking tidak valid.");
-    }
-
-    return parsed;
-  }
-
-  double _parseNumber(TextEditingController controller) {
-    final value = controller.text.trim().replaceAll(",", ".");
-    return double.tryParse(value) ?? 0;
-  }
-
-  Map<String, double> _calculateKPIValue() {
-    final double repairTime = _parseNumber(_repairTime);
-    final double operationalTime = _parseNumber(_opTime);
-    final double failures = _parseNumber(_failures);
-    final double actualOperatingHours = _parseNumber(_actualOp);
-    final double breakdownHours = _parseNumber(_breakdown);
-
-    final double safeFailures = failures <= 0 ? 1.0 : failures;
-
-    final double calculatedMttr = repairTime / safeFailures;
-    final double calculatedMtbf = operationalTime / safeFailures;
-
-    final double totalOperation = actualOperatingHours + breakdownHours;
-
-    final double calculatedMa = totalOperation > 0
-        ? (actualOperatingHours / totalOperation) * 100.0
-        : 0.0;
-
-    return {
-      "mttr": calculatedMttr,
-      "mtbf": calculatedMtbf,
-      "ma": calculatedMa,
-    };
-  }
-
-  void _previewKPI() {
-    final kpi = _calculateKPIValue();
-
-    setState(() {
-      mttr = kpi["mttr"] ?? 0;
-      mtbf = kpi["mtbf"] ?? 0;
-      ma = kpi["ma"] ?? 0;
-    });
-  }
-
-  Future<void> _submitKpi() async {
-    if (_isSubmitting) return;
-
-    setState(() => _isSubmitting = true);
-
-    try {
-      final token = await AuthService.getToken();
-
-      if (token == null || token.isEmpty) {
-        throw Exception("Token tidak ditemukan. Silakan login ulang.");
-      }
-
-      final bookingId = _getBookingId();
-
-      final kpi = _calculateKPIValue();
-
-      setState(() {
-        mttr = kpi["mttr"] ?? 0;
-        mtbf = kpi["mtbf"] ?? 0;
-        ma = kpi["ma"] ?? 0;
-      });
-
-      final response = await http.post(
-        Uri.parse("$baseUrl/technician/service-jobs/$bookingId/complete"),
-        headers: {
-          "Accept": "application/json",
-          "Authorization": "Bearer $token",
-        },
-        body: {
-          if (_noteController.text.trim().isNotEmpty)
-            "note_technician": _noteController.text.trim(),
-          "mttr": mttr.toStringAsFixed(2),
-          "mtbf": mtbf.toStringAsFixed(2),
-          "ma": ma.toStringAsFixed(1),
-        },
-      );
-
-      debugPrint("KPI UPDATE STATUS: ${response.statusCode}");
-      debugPrint("KPI UPDATE BODY: ${response.body}");
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        if (!mounted) return;
-
-        Navigator.pop(context);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("KPI berhasil disimpan."),
-            backgroundColor: Colors.green,
-          ),
-        );
-
-        await widget.onSuccess();
-      } else {
-        throw Exception("Gagal menyimpan KPI: ${response.body}");
-      }
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Error: $e"),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: 20,
-        right: 20,
-        top: 16,
-      ),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(20),
-        ),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => Navigator.pop(context),
-                  child: const Padding(
-                    padding: EdgeInsets.only(right: 8, top: 6, bottom: 6),
-                    child: Icon(
-                      Icons.arrow_back,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    "Input KPI: ${widget.unitName}",
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFFF9A825),
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 22),
-            TextField(
-              controller: _noteController,
-              maxLines: 3,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: "Catatan Teknisi",
-                hintText: "Tambahkan catatan akhir maintenance...",
-                hintStyle: const TextStyle(color: Colors.white24),
-                labelStyle: const TextStyle(color: Colors.white38),
-                filled: true,
-                fillColor: Colors.white10,
-                enabledBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Colors.white38),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Color(0xFFF9A825)),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-            ),
-            const SizedBox(height: 25),
-            const Divider(color: Colors.white10),
-            const SizedBox(height: 10),
-            const Text(
-              "KPI Analytics Calculation",
-              style: TextStyle(
-                color: Color(0xFFF9A825),
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 15),
-            _input("Total Repair Time (Hours)", _repairTime),
-            _input("Total Operational Time (Hours)", _opTime),
-            _input("Number of Failures", _failures),
-            _input("Actual Operating Hours", _actualOp),
-            _input("Breakdown Hours", _breakdown),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              height: 45,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF9A825),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                ),
-                onPressed: _previewKPI,
-                child: const Text(
-                  "PREVIEW KPI RESULTS",
-                  style: TextStyle(
-                    color: Colors.black,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 26),
-            _resRow("MTTR:", "${mttr.toStringAsFixed(2)} hrs"),
-            const SizedBox(height: 8),
-            _resRow("MTBF:", "${mtbf.toStringAsFixed(2)} hrs"),
-            const SizedBox(height: 8),
-            _resRow("MA:", "${ma.toStringAsFixed(1)} %"),
-            const SizedBox(height: 30),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF9A825),
-                  disabledBackgroundColor: Colors.white24,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                onPressed: _isSubmitting ? null : _submitKpi,
-                child: _isSubmitting
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          color: Colors.black,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Text(
-                        "SAVE KPI",
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 25),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _input(
-    String label,
-    TextEditingController controller,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: TextField(
-        controller: controller,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        style: const TextStyle(
-          fontSize: 13,
-          color: Colors.white,
-        ),
-        decoration: InputDecoration(
-          labelText: label,
-          filled: true,
-          fillColor: Colors.white10,
-          labelStyle: const TextStyle(
-            color: Colors.white38,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderSide: const BorderSide(color: Colors.white38),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderSide: const BorderSide(color: Color(0xFFF9A825)),
-            borderRadius: BorderRadius.circular(6),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _resRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white70),
-        ),
-        Text(
-          value,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFF9A825),
-          ),
-        ),
-      ],
-    );
-  }
-}

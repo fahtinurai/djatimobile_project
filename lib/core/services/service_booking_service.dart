@@ -5,23 +5,16 @@ import 'package:http/http.dart' as http;
 import 'package:djatimobile_project/core/services/auth_service.dart';
 
 class ServiceBookingService {
-  static const String baseUrl = "http://10.0.2.2:8000/api";
+  static const String baseUrl = "http://192.168.18.195:8000/api";
+  static const String backendBaseUrl = "http://192.168.18.195:8000";
+  static const String storageBaseUrl = "http://192.168.18.195:8000/storage";
 
-  /// Driver mengajukan booking maintenance dari damage report.
-  ///
-  /// Endpoint backend:
-  /// POST /api/driver/damage-reports/{damageReportId}/booking
-  ///
-  /// Alur:
-  /// 1. Driver sudah membuat damage report.
-  /// 2. Flutter mengambil damage_report_id.
-  /// 3. Flutter memanggil requestBooking().
-  /// 4. Backend membuat service_bookings.status = requested.
-  /// 5. Admin menerima notifikasi dan menjadwalkan teknisi.
   static Future<Map<String, dynamic>> requestBooking({
     required int damageReportId,
     String? preferredAt,
     String? noteDriver,
+    int? vehicleId,
+    int? assignmentId,
   }) async {
     final token = await _getTokenOrThrow();
 
@@ -37,6 +30,15 @@ class ServiceBookingService {
 
     if (noteDriver != null && noteDriver.trim().isNotEmpty) {
       body["note_driver"] = noteDriver.trim();
+    }
+
+    if (vehicleId != null && vehicleId > 0) {
+      body["vehicle_id"] = vehicleId.toString();
+    }
+
+    if (assignmentId != null && assignmentId > 0) {
+      body["vehicle_assignment_id"] = assignmentId.toString();
+      body["assignment_id"] = assignmentId.toString();
     }
 
     final response = await http.post(
@@ -57,7 +59,7 @@ class ServiceBookingService {
         throw Exception("Format response booking tidak sesuai.");
       }
 
-      return data;
+      return _normalizeBookingItem(data);
     }
 
     throw Exception(
@@ -65,24 +67,6 @@ class ServiceBookingService {
     );
   }
 
-  /// Mengambil semua booking maintenance milik driver.
-  ///
-  /// Endpoint backend:
-  /// GET /api/driver/bookings
-  ///
-  /// Response ideal:
-  /// {
-  ///   "data": [
-  ///     {
-  ///       "id": 1,
-  ///       "status": "approved",
-  ///       "damage_report": {...},
-  ///       "vehicle": {...},
-  ///       "driver": {...},
-  ///       "technician": {...}
-  ///     }
-  ///   ]
-  /// }
   static Future<List<dynamic>> getMyBookings() async {
     final token = await _getTokenOrThrow();
 
@@ -97,7 +81,9 @@ class ServiceBookingService {
     final decoded = _safeJsonDecode(response.body);
 
     if (response.statusCode == 200) {
-      return _extractList(decoded);
+      final list = _extractList(decoded);
+
+      return _normalizeBookingList(list);
     }
 
     throw Exception(
@@ -105,10 +91,6 @@ class ServiceBookingService {
     );
   }
 
-  /// Mengambil booking berdasarkan damage_report_id.
-  ///
-  /// Endpoint backend:
-  /// GET /api/driver/damage-reports/{damageReportId}/booking
   static Future<Map<String, dynamic>?> getBookingByDamageReport({
     required int damageReportId,
   }) async {
@@ -129,7 +111,13 @@ class ServiceBookingService {
     final decoded = _safeJsonDecode(response.body);
 
     if (response.statusCode == 200) {
-      return _extractNullableDataMap(decoded);
+      final data = _extractNullableDataMap(decoded);
+
+      if (data == null) {
+        return null;
+      }
+
+      return _normalizeBookingItem(data);
     }
 
     if (response.statusCode == 404) {
@@ -141,13 +129,6 @@ class ServiceBookingService {
     );
   }
 
-  /// Driver membatalkan booking.
-  ///
-  /// Endpoint backend:
-  /// POST /api/driver/bookings/{bookingId}/cancel
-  ///
-  /// Backend kamu mengizinkan cancel untuk status:
-  /// requested, approved, rescheduled.
   static Future<bool> cancelBooking({
     required int bookingId,
   }) async {
@@ -187,9 +168,13 @@ class ServiceBookingService {
       final status = booking["status"]?.toString().toLowerCase() ?? "";
 
       return status == "requested" ||
+          status == "pending" ||
           status == "approved" ||
+          status == "scheduled" ||
           status == "rescheduled" ||
-          status == "in_progress";
+          status == "in_progress" ||
+          status == "ongoing" ||
+          status == "proses";
     }).toList();
   }
 
@@ -206,6 +191,8 @@ class ServiceBookingService {
       return status == "completed" ||
           status == "finished" ||
           status == "selesai" ||
+          status == "done" ||
+          status == "closed" ||
           status == "canceled" ||
           status == "cancelled" ||
           status == "rejected";
@@ -227,6 +214,306 @@ class ServiceBookingService {
     final data = _extractDataMap(value) ?? value;
 
     return data["status"]?.toString() ?? "requested";
+  }
+
+  // ---------------------------------------------------------------------------
+  // NORMALIZER UNTUK FLOW VEHICLE PAGE -> VEHICLE ASSIGNMENT -> DRIVER
+  // ---------------------------------------------------------------------------
+
+  static List<dynamic> _normalizeBookingList(List<dynamic> items) {
+    return items.map((item) {
+      if (item is Map<String, dynamic>) {
+        return _normalizeBookingItem(item);
+      }
+
+      if (item is Map) {
+        return _normalizeBookingItem(Map<String, dynamic>.from(item));
+      }
+
+      return item;
+    }).toList();
+  }
+
+  static Map<String, dynamic> _normalizeBookingItem(Map<String, dynamic> item) {
+    final booking = Map<String, dynamic>.from(item);
+
+    final damageReport = _extractDamageReportFromBooking(booking);
+    final vehicle = _extractVehicleFromBooking(booking, damageReport);
+
+    final normalizedDamageReport = damageReport == null
+        ? null
+        : _normalizeDamageReport(damageReport);
+
+    final normalizedVehicle = vehicle == null
+        ? null
+        : _normalizeVehicle(vehicle);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Pastikan key snake_case tetap tersedia
+    |--------------------------------------------------------------------------
+    |
+    | UI yang sudah dibuat membaca:
+    | - booking["damage_report"]
+    | - booking["vehicle"]
+    |
+    */
+    if (normalizedDamageReport != null) {
+      booking["damage_report"] = normalizedDamageReport;
+    }
+
+    if (normalizedVehicle != null) {
+      booking["vehicle"] = normalizedVehicle;
+
+      /*
+      |--------------------------------------------------------------------------
+      | Jika damage_report punya vehicle, ikut sinkronkan
+      |--------------------------------------------------------------------------
+      */
+      if (booking["damage_report"] is Map) {
+        final reportMap = Map<String, dynamic>.from(
+          booking["damage_report"] as Map,
+        );
+
+        reportMap["vehicle"] = normalizedVehicle;
+        booking["damage_report"] = reportMap;
+      }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Alias camelCase agar tetap kompatibel dengan UI lain
+    |--------------------------------------------------------------------------
+    */
+    if (booking["damage_report"] != null && booking["damageReport"] == null) {
+      booking["damageReport"] = booking["damage_report"];
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Field ringkas di level booking
+    |--------------------------------------------------------------------------
+    */
+    if (normalizedVehicle != null) {
+      booking["equipment_name"] ??= normalizedVehicle["equipment_name"];
+      booking["plate_number"] ??= normalizedVehicle["plate_number"];
+      booking["serial_number"] ??= normalizedVehicle["serial_number"];
+      booking["initial_kpi"] ??= normalizedVehicle["initial_kpi"];
+      booking["initial_hour_meter"] ??=
+          normalizedVehicle["initial_hour_meter"];
+      booking["target_availability"] ??=
+          normalizedVehicle["target_availability"];
+      booking["vehicle_status"] ??= normalizedVehicle["status"];
+    }
+
+    if (normalizedDamageReport != null) {
+      booking["damage_type"] ??= normalizedDamageReport["damage_type"];
+      booking["description"] ??= normalizedDamageReport["description"];
+      booking["image"] ??= normalizedDamageReport["image"];
+      booking["image_url"] ??= normalizedDamageReport["image_url"];
+    }
+
+    return booking;
+  }
+
+  static Map<String, dynamic>? _extractDamageReportFromBooking(
+    Map<String, dynamic> booking,
+  ) {
+    final snake = booking["damage_report"];
+    if (snake is Map<String, dynamic>) {
+      return snake;
+    }
+
+    if (snake is Map) {
+      return Map<String, dynamic>.from(snake);
+    }
+
+    final camel = booking["damageReport"];
+    if (camel is Map<String, dynamic>) {
+      return camel;
+    }
+
+    if (camel is Map) {
+      return Map<String, dynamic>.from(camel);
+    }
+
+    final report = booking["report"];
+    if (report is Map<String, dynamic>) {
+      return report;
+    }
+
+    if (report is Map) {
+      return Map<String, dynamic>.from(report);
+    }
+
+    final hasDirectDamageReportFields = booking["damage_type"] != null ||
+        booking["description"] != null ||
+        booking["image"] != null ||
+        booking["image_url"] != null;
+
+    if (hasDirectDamageReportFields) {
+      return booking;
+    }
+
+    return null;
+  }
+
+  static Map<String, dynamic>? _extractVehicleFromBooking(
+    Map<String, dynamic> booking,
+    Map<String, dynamic>? damageReport,
+  ) {
+    final directVehicle = booking["vehicle"];
+
+    if (directVehicle is Map<String, dynamic>) {
+      return directVehicle;
+    }
+
+    if (directVehicle is Map) {
+      return Map<String, dynamic>.from(directVehicle);
+    }
+
+    final reportVehicle = damageReport?["vehicle"];
+
+    if (reportVehicle is Map<String, dynamic>) {
+      return reportVehicle;
+    }
+
+    if (reportVehicle is Map) {
+      return Map<String, dynamic>.from(reportVehicle);
+    }
+
+    final hasVehicleFields = booking["equipment_name"] != null ||
+        booking["plate_number"] != null ||
+        booking["serial_number"] != null ||
+        booking["initial_kpi"] != null ||
+        booking["initial_hour_meter"] != null;
+
+    if (hasVehicleFields) {
+      return booking;
+    }
+
+    final hasReportVehicleFields = damageReport?["vehicle_equipment_name"] != null ||
+        damageReport?["vehicle_plate_number"] != null ||
+        damageReport?["vehicle_serial_number"] != null ||
+        damageReport?["vehicle_initial_kpi"] != null ||
+        damageReport?["vehicle_initial_hour_meter"] != null;
+
+    if (hasReportVehicleFields && damageReport != null) {
+      return {
+        "id": damageReport["vehicle_id"],
+        "equipment_name": damageReport["vehicle_equipment_name"],
+        "plate_number": damageReport["vehicle_plate_number"],
+        "serial_number": damageReport["vehicle_serial_number"],
+        "initial_kpi": damageReport["vehicle_initial_kpi"],
+        "initial_hour_meter": damageReport["vehicle_initial_hour_meter"],
+        "target_availability": damageReport["vehicle_target_availability"],
+        "status": damageReport["vehicle_status"],
+      };
+    }
+
+    return null;
+  }
+
+  static Map<String, dynamic> _normalizeDamageReport(
+    Map<String, dynamic> damageReport,
+  ) {
+    final report = Map<String, dynamic>.from(damageReport);
+
+    final imageRaw = report["image_url"] ??
+        report["imageUrl"] ??
+        report["image"];
+
+    final imageUrl = _resolveImageUrl(imageRaw);
+
+    if (imageUrl != null) {
+      report["image_url"] = imageUrl;
+      report["imageUrl"] = imageUrl;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Jika backend mengirim vehicle_* dari DamageReport model,
+    | tetap pertahankan agar UI analytics/task detail bisa membacanya.
+    |--------------------------------------------------------------------------
+    */
+    report["vehicle_equipment_name"] ??=
+        report["vehicle"] is Map ? report["vehicle"]["equipment_name"] : null;
+
+    report["vehicle_plate_number"] ??=
+        report["vehicle"] is Map ? report["vehicle"]["plate_number"] : null;
+
+    report["vehicle_serial_number"] ??=
+        report["vehicle"] is Map ? report["vehicle"]["serial_number"] : null;
+
+    report["vehicle_initial_kpi"] ??=
+        report["vehicle"] is Map ? report["vehicle"]["initial_kpi"] : null;
+
+    report["vehicle_initial_hour_meter"] ??=
+        report["vehicle"] is Map
+            ? (report["vehicle"]["initial_hour_meter"] ??
+                report["vehicle"]["initial_kpi"])
+            : null;
+
+    report["vehicle_target_availability"] ??=
+        report["vehicle"] is Map
+            ? (report["vehicle"]["target_availability"] ?? 90)
+            : 90;
+
+    report["vehicle_status"] ??=
+        report["vehicle"] is Map ? (report["vehicle"]["status"] ?? "active") : "active";
+
+    return report;
+  }
+
+  static Map<String, dynamic> _normalizeVehicle(
+    Map<String, dynamic> vehicle,
+  ) {
+    final normalized = Map<String, dynamic>.from(vehicle);
+
+    final initialValue = normalized["initial_hour_meter"] ??
+        normalized["initial_kpi"] ??
+        normalized["hour_meter_awal"] ??
+        normalized["kpi_awal"] ??
+        0;
+
+    normalized["initial_kpi"] ??= initialValue;
+    normalized["initial_hour_meter"] ??= initialValue;
+
+    normalized["target_availability"] ??=
+        normalized["target_ma"] ?? 90;
+
+    normalized["target_ma"] ??=
+        normalized["target_availability"] ?? 90;
+
+    normalized["status"] ??=
+        normalized["unit_status"] ?? "active";
+
+    normalized["unit_status"] ??=
+        normalized["status"] ?? "active";
+
+    return normalized;
+  }
+
+  static String? _resolveImageUrl(dynamic value) {
+    final raw = value?.toString();
+
+    if (raw == null || raw.isEmpty || raw == "null" || raw == "-") {
+      return null;
+    }
+
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      return raw
+          .replaceFirst("http://127.0.0.1:8000", backendBaseUrl)
+          .replaceFirst("http://localhost:8000", backendBaseUrl);
+    }
+
+    final cleanPath = raw.startsWith("/") ? raw.substring(1) : raw;
+
+    if (cleanPath.startsWith("storage/")) {
+      return "$backendBaseUrl/$cleanPath";
+    }
+
+    return "$storageBaseUrl/$cleanPath";
   }
 
   // ---------------------------------------------------------------------------
@@ -298,6 +585,10 @@ class ServiceBookingService {
       final data = decoded["data"];
 
       if (data == null) {
+        if (decoded.isNotEmpty) {
+          return decoded;
+        }
+
         return null;
       }
 
@@ -340,6 +631,16 @@ class ServiceBookingService {
         if (paginatedData is List) {
           return paginatedData;
         }
+
+        final bookingsFromData = data["bookings"];
+        if (bookingsFromData is List) {
+          return bookingsFromData;
+        }
+
+        final serviceBookingsFromData = data["service_bookings"];
+        if (serviceBookingsFromData is List) {
+          return serviceBookingsFromData;
+        }
       }
 
       final bookings = decoded["bookings"];
@@ -378,16 +679,33 @@ class ServiceBookingService {
           return firstValue.first.toString();
         }
 
-        return firstValue.toString();
+        if (firstValue != null) {
+          return firstValue.toString();
+        }
       }
     }
 
     if (decoded is Map) {
       final mapped = Map<String, dynamic>.from(decoded);
+
       final message = mapped["message"]?.toString();
 
       if (message != null && message.isNotEmpty) {
         return message;
+      }
+
+      final errors = mapped["errors"];
+
+      if (errors is Map && errors.isNotEmpty) {
+        final firstValue = errors.values.first;
+
+        if (firstValue is List && firstValue.isNotEmpty) {
+          return firstValue.first.toString();
+        }
+
+        if (firstValue != null) {
+          return firstValue.toString();
+        }
       }
     }
 
