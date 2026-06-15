@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:djatimobile_project/core/services/auth_service.dart';
 
 class VehicleDailyLogService {
-  static const String baseUrl = "http://192.168.18.195:8000/api";
+  static const String baseUrl = "http://192.168.0.106:8000/api";
 
   static Future<List<dynamic>> getLogs() async {
     final token = await AuthService.getToken();

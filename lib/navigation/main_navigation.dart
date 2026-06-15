@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 
-// Dashboard (Driver)
-import 'package:djatimobile_project/pages/dashboard/analytics_report_page.dart';
-
 // Repair (Driver)
 import 'package:djatimobile_project/pages/repair/repair_status_page.dart';
 import 'package:djatimobile_project/pages/repair/damage_report_page.dart';
@@ -18,7 +15,10 @@ import 'package:djatimobile_project/pages/mechanic/profile_page.dart';
 class MainNavigation extends StatefulWidget {
   final String userRole;
 
-  const MainNavigation({super.key, required this.userRole});
+  const MainNavigation({
+    super.key,
+    required this.userRole,
+  });
 
   @override
   State<MainNavigation> createState() => _MainNavigationState();
@@ -33,17 +33,20 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   void initState() {
     super.initState();
+    _setupNavigation();
+  }
 
-    final role = widget.userRole.toLowerCase();
+  void _setupNavigation() {
+    final role = widget.userRole.trim().toLowerCase();
 
     // =========================
     // TEKNISI
     // =========================
     if (role == "teknisi") {
-      pages = [
-        const MechanicHistoryPage(),
-        const MechanicTasksFlow(),
-        const MechanicProfilePage(),
+      pages = const [
+        MechanicHistoryPage(),
+        MechanicTasksFlow(),
+        MechanicProfilePage(),
       ];
 
       items = const [
@@ -64,20 +67,16 @@ class _MainNavigationState extends State<MainNavigation> {
 
     // =========================
     // DRIVER
+    // Analytics sudah dihapus
     // =========================
     else if (role == "driver") {
-      pages = [
-        const AnalyticsReportPage(),
-        const RepairStatusPage(),
-        const DamageReportPage(),
-        const ProfilePage(),
+      pages = const [
+        RepairStatusPage(),
+        DamageReportPage(),
+        ProfilePage(),
       ];
 
       items = const [
-        BottomNavigationBarItem(
-          icon: Icon(Icons.analytics),
-          label: 'Analytics',
-        ),
         BottomNavigationBarItem(
           icon: Icon(Icons.track_changes),
           label: 'Status',
@@ -94,15 +93,19 @@ class _MainNavigationState extends State<MainNavigation> {
     }
 
     // =========================
-    // FALLBACK (role tidak dikenali)
+    // FALLBACK
     // =========================
     else {
       pages = const [
         Scaffold(
+          backgroundColor: Color(0xFF121212),
           body: Center(
             child: Text(
               "Role tidak dikenali",
-              style: TextStyle(fontSize: 18),
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.white,
+              ),
             ),
           ),
         ),
@@ -115,6 +118,14 @@ class _MainNavigationState extends State<MainNavigation> {
         ),
       ];
     }
+  }
+
+  void _onItemTapped(int index) {
+    if (index < 0 || index >= pages.length) return;
+
+    setState(() {
+      _selectedIndex = index;
+    });
   }
 
   @override
@@ -130,9 +141,7 @@ class _MainNavigationState extends State<MainNavigation> {
         unselectedItemColor: Colors.white24,
         backgroundColor: const Color(0xFF1E1E1E),
         type: BottomNavigationBarType.fixed,
-        onTap: (index) {
-          setState(() => _selectedIndex = index);
-        },
+        onTap: _onItemTapped,
         items: items,
       ),
     );

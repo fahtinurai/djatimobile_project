@@ -14,7 +14,7 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  static const String baseUrl = "http://192.168.18.195:8000/api";
+  static const String baseUrl = "http://192.168.0.106:8000/api";
 
   static const Color bgColor = Color(0xFF0F1115);
   static const Color cardColor = Color(0xFF1A1D24);

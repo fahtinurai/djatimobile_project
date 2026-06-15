@@ -12,7 +12,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   bool _isLoading = true;
   String? _errorMessage;
 
-  double _totalHourMeter = 0;
+  double _totalHourMeter = 0; 
   int _annualServiceCount = 0;
   double _fuelConsumptionLiters = 0;
 
