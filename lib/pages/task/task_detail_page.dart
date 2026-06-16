@@ -6,12 +6,55 @@ class TaskDetailPage extends StatelessWidget {
   final String userRole;
   final VoidCallback? onUpdateStatus;
 
+  /// Data dari backend:
+  /// job['damage_report']?['part_usages']
+  ///
+  /// Contoh:
+  /// [
+  ///   {
+  ///     "id": 1,
+  ///     "qty": 2,
+  ///     "status": "rejected",
+  ///     "note": "[ADMIN-REJECT] Stok tidak tersedia",
+  ///     "part": {
+  ///       "name": "Filter Oli",
+  ///       "sku": "FLT-001",
+  ///       "stock": 0
+  ///     }
+  ///   }
+  /// ]
+  final List<Map<String, dynamic>> partUsages;
+
+  /// Data dari backend:
+  /// job['damage_report']?['part_usage_summary']
+  ///
+  /// Contoh:
+  /// {
+  ///   "total": 2,
+  ///   "requested": 1,
+  ///   "approved": 0,
+  ///   "rejected": 1
+  /// }
+  final Map<String, dynamic>? partUsageSummary;
+
+  /// Data dari backend:
+  /// job['damage_report']?['has_rejected_part_usage']
+  final bool? hasRejectedPartUsage;
+
+  /// Data dari backend:
+  /// job['damage_report']?['latest_rejected_part_usage_note']
+  final String? latestRejectedPartUsageNote;
+
   const TaskDetailPage({
     super.key,
     required this.unitName,
     required this.unitId,
     required this.userRole,
     this.onUpdateStatus,
+    this.partUsages = const <Map<String, dynamic>>[],
+    this.partUsageSummary,
+    this.hasRejectedPartUsage,
+    this.latestRejectedPartUsageNote,
   });
 
   static const Color bgColor = Color(0xFF0F1115);
@@ -53,6 +96,39 @@ class TaskDetailPage extends StatelessWidget {
     }
 
     return Colors.white54;
+  }
+
+  bool get _hasRejectedPartUsage {
+    if (hasRejectedPartUsage != null) {
+      return hasRejectedPartUsage!;
+    }
+
+    return partUsages.any((usage) {
+      final status = _normalizePartStatus(_textValue(usage['status']));
+      return status == 'rejected';
+    });
+  }
+
+  String get _latestRejectedNote {
+    final backendNote = _cleanAdminNote(latestRejectedPartUsageNote ?? '');
+
+    if (backendNote.isNotEmpty) {
+      return backendNote;
+    }
+
+    for (final usage in partUsages) {
+      final status = _normalizePartStatus(_textValue(usage['status']));
+
+      if (status == 'rejected') {
+        final note = _cleanAdminNote(_textValue(usage['note']));
+
+        if (note.isNotEmpty) {
+          return note;
+        }
+      }
+    }
+
+    return '';
   }
 
   void _handleUpdateStatus(BuildContext context) {
@@ -115,6 +191,7 @@ class TaskDetailPage extends StatelessWidget {
             const SizedBox(height: 16),
             _buildStatusCard(),
             const SizedBox(height: 16),
+
             _buildSectionCard(
               title: "Unit Information",
               icon: Icons.local_shipping_outlined,
@@ -140,7 +217,9 @@ class TaskDetailPage extends StatelessWidget {
                 ],
               ),
             ),
+
             const SizedBox(height: 16),
+
             _buildSectionCard(
               title: "Task Flow",
               icon: Icons.account_tree_outlined,
@@ -156,7 +235,7 @@ class TaskDetailPage extends StatelessWidget {
                   _buildFlowItem(
                     title: _isMechanic ? "Waiting for Action" : "View Only",
                     description: _isMechanic
-                        ? "Mechanic dapat memperbarui status pekerjaan melalui tombol di bawah."
+                        ? "Mechanic dapat memperbarui status pekerjaan dan memantau progress permintaan sparepart."
                         : "Operator hanya dapat melihat informasi pekerjaan tanpa mengubah status.",
                     icon: _isMechanic
                         ? Icons.engineering_outlined
@@ -167,7 +246,14 @@ class TaskDetailPage extends StatelessWidget {
                 ],
               ),
             ),
+
+            if (_isMechanic) ...[
+              const SizedBox(height: 16),
+              _buildPartUsageSection(),
+            ],
+
             const SizedBox(height: 16),
+
             if (!_isMechanic) _buildViewOnlyCard(),
           ],
         ),
@@ -287,6 +373,11 @@ class TaskDetailPage extends StatelessWidget {
                       _isMechanic ? "Can Update" : "View Only",
                       _isMechanic ? primaryColor : Colors.white54,
                     ),
+                    if (_isMechanic && _hasRejectedPartUsage)
+                      _buildChip(
+                        "Part Rejected",
+                        Colors.redAccent,
+                      ),
                   ],
                 ),
               ],
@@ -329,7 +420,7 @@ class TaskDetailPage extends StatelessWidget {
           Expanded(
             child: Text(
               _isMechanic
-                  ? "Halaman ini digunakan mechanic untuk melihat detail unit dan memperbarui status pekerjaan."
+                  ? "Halaman ini digunakan mechanic untuk melihat detail unit, memperbarui status pekerjaan, dan memantau progress permintaan sparepart."
                   : "Halaman ini bersifat view-only. Operator hanya dapat melihat detail unit tanpa melakukan perubahan status.",
               style: const TextStyle(
                 color: Colors.white70,
@@ -342,6 +433,572 @@ class TaskDetailPage extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Widget _buildPartUsageSection() {
+    return _buildSectionCard(
+      title: "Sparepart Request Progress",
+      icon: Icons.inventory_2_outlined,
+      child: Column(
+        children: [
+          _buildPartUsageSummaryCard(),
+
+          if (_hasRejectedPartUsage) ...[
+            const SizedBox(height: 12),
+            _buildRejectedAlertCard(),
+          ],
+
+          const SizedBox(height: 12),
+
+          if (partUsages.isEmpty)
+            _buildEmptyPartUsageCard()
+          else
+            Column(
+              children: [
+                for (int i = 0; i < partUsages.length; i++) ...[
+                  _buildPartUsageCard(partUsages[i]),
+                  if (i != partUsages.length - 1)
+                    const SizedBox(height: 12),
+                ],
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPartUsageSummaryCard() {
+    final total = _summaryValue('total');
+    final requested = _summaryValue('requested');
+    final approved = _summaryValue('approved');
+    final rejected = _summaryValue('rejected');
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.045),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.07),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildSummaryItem(
+              label: "Total",
+              value: total.toString(),
+              color: Colors.white70,
+              icon: Icons.inventory_2_outlined,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildSummaryItem(
+              label: "Pending",
+              value: requested.toString(),
+              color: primaryColor,
+              icon: Icons.pending_actions_rounded,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildSummaryItem(
+              label: "Approved",
+              value: approved.toString(),
+              color: Colors.greenAccent,
+              icon: Icons.check_circle_outline_rounded,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildSummaryItem(
+              label: "Rejected",
+              value: rejected.toString(),
+              color: Colors.redAccent,
+              icon: Icons.cancel_outlined,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryItem({
+    required String label,
+    required String value,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(
+          color: color.withOpacity(0.16),
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            icon,
+            color: color,
+            size: 17,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRejectedAlertCard() {
+    final note = _latestRejectedNote;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.redAccent.withOpacity(0.16),
+            Colors.redAccent.withOpacity(0.06),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.redAccent.withOpacity(0.30),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.warning_amber_rounded,
+            color: Colors.redAccent,
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              note.isEmpty
+                  ? "Terdapat permintaan sparepart yang ditolak admin. Silakan cek daftar request di bawah untuk melihat detailnya."
+                  : "Terdapat permintaan sparepart yang ditolak admin.\nAlasan: $note",
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                height: 1.45,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyPartUsageCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.045),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.07),
+        ),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline_rounded,
+            color: Colors.white38,
+            size: 22,
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              "Belum ada permintaan sparepart untuk pekerjaan ini.",
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 12,
+                height: 1.45,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPartUsageCard(Map<String, dynamic> usage) {
+    final rawStatus = _textValue(usage['status']);
+    final status = _normalizePartStatus(rawStatus);
+    final qty = _textValue(usage['qty']);
+    final note = _cleanAdminNote(_textValue(usage['note']));
+
+    final partName = _partName(usage);
+    final sku = _partSku(usage);
+    final stock = _partStock(usage);
+
+    final statusColor = _partStatusColor(status);
+    final statusIcon = _partStatusIcon(status);
+    final statusLabel = _partStatusLabel(status);
+    final statusDescription = _partStatusDescription(status);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            statusColor.withOpacity(0.12),
+            Colors.white.withOpacity(0.035),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: statusColor.withOpacity(0.24),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildIconBadge(
+            icon: statusIcon,
+            color: statusColor,
+            size: 42,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        partName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          height: 1.25,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildSmallStatusChip(statusLabel, statusColor),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  "SKU: $sku • Qty: ${qty.isEmpty ? "-" : qty} • Stock: $stock",
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  statusDescription,
+                  style: TextStyle(
+                    color: statusColor.withOpacity(0.92),
+                    fontSize: 12,
+                    height: 1.4,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (note.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _buildAdminNoteBox(
+                    status: status,
+                    note: note,
+                    color: statusColor,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminNoteBox({
+    required String status,
+    required String note,
+    required Color color,
+  }) {
+    final title = status == "rejected"
+        ? "Alasan Penolakan Admin"
+        : "Catatan Admin";
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(
+          color: color.withOpacity(0.22),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.notes_rounded,
+            color: color,
+            size: 17,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: "$title\n",
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 11,
+                      height: 1.4,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  TextSpan(
+                    text: note,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      height: 1.4,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _summaryValue(String key) {
+    if (partUsageSummary != null) {
+      dynamic value = partUsageSummary![key];
+
+      if (value == null && key == 'requested') {
+        value = partUsageSummary!['pending'];
+      }
+
+      final parsed = _intValue(value);
+
+      if (parsed != null) {
+        return parsed;
+      }
+    }
+
+    if (key == 'total') {
+      return partUsages.length;
+    }
+
+    int count = 0;
+
+    for (final usage in partUsages) {
+      final status = _normalizePartStatus(_textValue(usage['status']));
+
+      if (key == 'requested' && status == 'requested') {
+        count++;
+      }
+
+      if (key == 'approved' && status == 'approved') {
+        count++;
+      }
+
+      if (key == 'rejected' && status == 'rejected') {
+        count++;
+      }
+    }
+
+    return count;
+  }
+
+  String _partName(Map<String, dynamic> usage) {
+    final part = usage['part'];
+
+    if (part is Map) {
+      final name = _textValue(part['name']);
+      return name.isEmpty ? "-" : name;
+    }
+
+    final name = _textValue(usage['part_name']);
+    return name.isEmpty ? "-" : name;
+  }
+
+  String _partSku(Map<String, dynamic> usage) {
+    final part = usage['part'];
+
+    if (part is Map) {
+      final sku = _textValue(part['sku']);
+      return sku.isEmpty ? "-" : sku;
+    }
+
+    final sku = _textValue(usage['sku']);
+    return sku.isEmpty ? "-" : sku;
+  }
+
+  String _partStock(Map<String, dynamic> usage) {
+    final part = usage['part'];
+
+    if (part is Map) {
+      final stock = _textValue(part['stock']);
+      return stock.isEmpty ? "-" : stock;
+    }
+
+    final stock = _textValue(usage['stock']);
+    return stock.isEmpty ? "-" : stock;
+  }
+
+  String _normalizePartStatus(String status) {
+    final value = status.toLowerCase().trim().replaceAll("-", "_");
+
+    switch (value) {
+      case "approved":
+      case "approve":
+      case "disetujui":
+        return "approved";
+
+      case "rejected":
+      case "reject":
+      case "ditolak":
+        return "rejected";
+
+      case "pending":
+      case "requested":
+      case "request":
+      case "menunggu":
+        return "requested";
+
+      default:
+        return value.isEmpty ? "requested" : value;
+    }
+  }
+
+  Color _partStatusColor(String status) {
+    switch (status) {
+      case "approved":
+        return Colors.greenAccent;
+      case "rejected":
+        return Colors.redAccent;
+      case "requested":
+        return primaryColor;
+      default:
+        return Colors.lightBlueAccent;
+    }
+  }
+
+  IconData _partStatusIcon(String status) {
+    switch (status) {
+      case "approved":
+        return Icons.check_circle_outline_rounded;
+      case "rejected":
+        return Icons.cancel_outlined;
+      case "requested":
+        return Icons.pending_actions_rounded;
+      default:
+        return Icons.info_outline_rounded;
+    }
+  }
+
+  String _partStatusLabel(String status) {
+    switch (status) {
+      case "approved":
+        return "Approved";
+      case "rejected":
+        return "Rejected";
+      case "requested":
+        return "Pending";
+      default:
+        return status.isEmpty ? "Unknown" : status;
+    }
+  }
+
+  String _partStatusDescription(String status) {
+    switch (status) {
+      case "approved":
+        return "Permintaan sparepart telah disetujui admin dan dapat digunakan untuk proses perbaikan.";
+      case "rejected":
+        return "Permintaan sparepart ditolak admin. Periksa catatan admin untuk mengetahui alasannya.";
+      case "requested":
+        return "Permintaan sparepart sedang menunggu persetujuan admin.";
+      default:
+        return "Status permintaan sparepart belum dikenali oleh sistem.";
+    }
+  }
+
+  String _textValue(dynamic value) {
+    if (value == null) return "";
+    return value.toString().trim();
+  }
+
+  int? _intValue(dynamic value) {
+    if (value == null) return null;
+
+    if (value is int) {
+      return value;
+    }
+
+    if (value is double) {
+      return value.toInt();
+    }
+
+    if (value is num) {
+      return value.toInt();
+    }
+
+    final parsed = int.tryParse(value.toString());
+
+    return parsed;
+  }
+
+  String _cleanAdminNote(String note) {
+    return note
+        .replaceAll("[ADMIN-REJECT]", "")
+        .replaceAll("[ADMIN]", "")
+        .replaceAll("[ADMIN APPROVE]", "")
+        .replaceAll("[ADMIN-APPROVE]", "")
+        .trim();
   }
 
   Widget _buildSectionCard({
@@ -578,6 +1235,28 @@ class TaskDetailPage extends StatelessWidget {
           color: color,
           fontWeight: FontWeight.w900,
           fontSize: 11,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSmallStatusChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: color.withOpacity(0.32),
+        ),
+      ),
+      child: Text(
+        label.toUpperCase(),
+        style: TextStyle(
+          color: color,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.4,
         ),
       ),
     );

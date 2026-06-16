@@ -8,6 +8,7 @@ class TechnicianPartUsageService {
   /// Ambil daftar sparepart untuk dipilih teknisi.
   ///
   /// Backend:
+  /// GET /api/technician/parts
   /// GET /api/technician/parts?search=...
   static Future<List<dynamic>> getParts({
     String search = "",
@@ -44,15 +45,7 @@ class TechnicianPartUsageService {
   /// Backend:
   /// POST /api/technician/part-usages
   ///
-  /// Body lama:
-  /// {
-  ///   "part_id": 1,
-  ///   "damage_report_id": 5,
-  ///   "qty": 2,
-  ///   "note": "Catatan"
-  /// }
-  ///
-  /// Body baru yang lebih kuat:
+  /// Body:
   /// {
   ///   "part_id": 1,
   ///   "damage_report_id": 5,
@@ -63,9 +56,10 @@ class TechnicianPartUsageService {
   /// }
   ///
   /// Catatan:
-  /// - damage_report_id tetap dikirim agar kompatibel dengan backend lama.
-  /// - service_booking_id / booking_id dikirim agar sparepart menempel jelas
-  ///   ke job teknisi dari maintenance scheduling.
+  /// - damage_report_id tetap wajib karena backend menyimpan request
+  ///   berdasarkan damage report.
+  /// - service_booking_id / booking_id tetap dikirim untuk kompatibilitas
+  ///   dengan flow job teknisi.
   static Future<Map<String, dynamic>> requestPartUsage({
     required int partId,
     required int damageReportId,
@@ -136,6 +130,11 @@ class TechnicianPartUsageService {
   ///
   /// Backend:
   /// GET /api/technician/my-part-usages
+  ///
+  /// Response bisa berisi status:
+  /// - requested / pending
+  /// - approved
+  /// - rejected
   static Future<List<dynamic>> getMyPartUsages() async {
     final result = await ApiService.get(
       "/technician/my-part-usages",
@@ -159,6 +158,183 @@ class TechnicianPartUsageService {
   }
 
   // ---------------------------------------------------------------------------
+  // JOB DETAIL / DAMAGE REPORT PART USAGE HELPERS
+  // ---------------------------------------------------------------------------
+
+  /// Ambil daftar request sparepart dari response job teknisi.
+  ///
+  /// Backend dari ServiceJobController mengirim:
+  ///
+  /// job["damage_report"]["part_usages"]
+  ///
+  /// Method ini dibuat fleksibel supaya tetap aman jika response memakai:
+  /// - damage_report
+  /// - damageReport
+  /// - part_usages
+  /// - partUsages
+  /// - technician_part_usages
+  /// - technicianPartUsages
+  static List<Map<String, dynamic>> extractPartUsagesFromJob(dynamic job) {
+    final damageReport = _extractDamageReportMap(job);
+    final source = damageReport ?? _asMap(job);
+
+    if (source == null) {
+      return <Map<String, dynamic>>[];
+    }
+
+    final rawList = _extractPartUsageListFromMap(source);
+
+    return rawList
+        .map((item) {
+          if (item is Map<String, dynamic>) {
+            return _normalizePartUsage(item);
+          }
+
+          if (item is Map) {
+            return _normalizePartUsage(
+              Map<String, dynamic>.from(item),
+            );
+          }
+
+          return null;
+        })
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+
+  /// Ambil summary request sparepart dari response job teknisi.
+  ///
+  /// Backend:
+  /// damage_report.part_usage_summary
+  ///
+  /// Kalau backend belum mengirim summary, method ini menghitung dari part_usages.
+  static Map<String, dynamic> extractPartUsageSummaryFromJob(dynamic job) {
+    final damageReport = _extractDamageReportMap(job);
+    final usages = extractPartUsagesFromJob(job);
+
+    final rawSummary = damageReport?["part_usage_summary"] ??
+        damageReport?["partUsageSummary"];
+
+    if (rawSummary is Map) {
+      final summary = Map<String, dynamic>.from(rawSummary);
+
+      return {
+        "total": _intValue(summary["total"]) ?? usages.length,
+        "requested": _intValue(summary["requested"] ?? summary["pending"]) ??
+            _countByStatus(usages, "requested"),
+        "approved": _intValue(summary["approved"]) ??
+            _countByStatus(usages, "approved"),
+        "rejected": _intValue(summary["rejected"]) ??
+            _countByStatus(usages, "rejected"),
+      };
+    }
+
+    return {
+      "total": usages.length,
+      "requested": _countByStatus(usages, "requested"),
+      "approved": _countByStatus(usages, "approved"),
+      "rejected": _countByStatus(usages, "rejected"),
+    };
+  }
+
+  /// Cek apakah ada request sparepart yang ditolak admin.
+  ///
+  /// Backend:
+  /// damage_report.has_rejected_part_usage
+  ///
+  /// Kalau backend belum mengirim, dihitung dari part_usages.
+  static bool hasRejectedPartUsageFromJob(dynamic job) {
+    final damageReport = _extractDamageReportMap(job);
+
+    final rawValue = damageReport?["has_rejected_part_usage"] ??
+        damageReport?["hasRejectedPartUsage"];
+
+    if (rawValue is bool) {
+      return rawValue;
+    }
+
+    if (rawValue != null) {
+      final text = rawValue.toString().toLowerCase();
+      if (text == "true" || text == "1" || text == "yes") {
+        return true;
+      }
+    }
+
+    final usages = extractPartUsagesFromJob(job);
+
+    return usages.any((usage) {
+      return isRejected(usage["status"]);
+    });
+  }
+
+  /// Ambil alasan penolakan terbaru dari response job.
+  ///
+  /// Backend:
+  /// damage_report.latest_rejected_part_usage_note
+  ///
+  /// Kalau backend belum mengirim, dicari dari part_usages status rejected.
+  static String latestRejectedPartUsageNoteFromJob(dynamic job) {
+    final damageReport = _extractDamageReportMap(job);
+
+    final backendNote = cleanAdminNote(
+      damageReport?["latest_rejected_part_usage_note"] ??
+          damageReport?["latestRejectedPartUsageNote"],
+    );
+
+    if (backendNote.isNotEmpty) {
+      return backendNote;
+    }
+
+    final usages = extractPartUsagesFromJob(job);
+
+    for (final usage in usages) {
+      if (isRejected(usage["status"])) {
+        final note = getAdminNote(usage);
+
+        if (note.isNotEmpty) {
+          return note;
+        }
+      }
+    }
+
+    return "";
+  }
+
+  /// Ambil progress label global dari job.
+  ///
+  /// Contoh:
+  /// - Tidak ada request sparepart
+  /// - Ada request menunggu approval admin
+  /// - Ada request sparepart ditolak admin
+  /// - Semua request sparepart disetujui
+  static String getPartUsageProgressLabelFromJob(dynamic job) {
+    final summary = extractPartUsageSummaryFromJob(job);
+
+    final total = _intValue(summary["total"]) ?? 0;
+    final requested = _intValue(summary["requested"]) ?? 0;
+    final approved = _intValue(summary["approved"]) ?? 0;
+    final rejected = _intValue(summary["rejected"]) ?? 0;
+
+    if (total <= 0) {
+      return "Belum ada request sparepart";
+    }
+
+    if (rejected > 0) {
+      return "Ada request sparepart ditolak admin";
+    }
+
+    if (requested > 0) {
+      return "Menunggu approval admin";
+    }
+
+    if (approved == total) {
+      return "Semua request sparepart disetujui";
+    }
+
+    return "Progress request sparepart tersedia";
+  }
+
+  // ---------------------------------------------------------------------------
   // EXTRACTORS
   // ---------------------------------------------------------------------------
 
@@ -167,6 +343,7 @@ class TechnicianPartUsageService {
 
     final possibleId = data["id"] ??
         data["part_usage_id"] ??
+        data["partUsageId"] ??
         data["usage"]?["id"] ??
         data["data"]?["id"];
 
@@ -222,12 +399,49 @@ class TechnicianPartUsageService {
   // STATUS HELPERS
   // ---------------------------------------------------------------------------
 
+  static String normalizeStatus(dynamic statusValue) {
+    final status = statusValue?.toString().toLowerCase().trim() ?? "";
+    final normalized = status.replaceAll("-", "_").replaceAll(" ", "_");
+
+    switch (normalized) {
+      case "requested":
+      case "request":
+      case "pending":
+      case "menunggu":
+      case "waiting":
+        return "requested";
+
+      case "approved":
+      case "approve":
+      case "disetujui":
+        return "approved";
+
+      case "rejected":
+      case "reject":
+      case "ditolak":
+        return "rejected";
+
+      case "used":
+      case "issued":
+      case "dipakai":
+        return "used";
+
+      case "cancelled":
+      case "canceled":
+      case "cancel":
+      case "dibatalkan":
+        return "canceled";
+
+      default:
+        return normalized.isEmpty ? "requested" : normalized;
+    }
+  }
+
   static String getStatusLabel(dynamic statusValue) {
-    final status = statusValue?.toString().toLowerCase() ?? "requested";
+    final status = normalizeStatus(statusValue);
 
     switch (status) {
       case "requested":
-      case "pending":
         return "Pending";
 
       case "approved":
@@ -237,10 +451,8 @@ class TechnicianPartUsageService {
         return "Rejected";
 
       case "used":
-      case "issued":
         return "Used";
 
-      case "cancelled":
       case "canceled":
         return "Canceled";
 
@@ -249,34 +461,48 @@ class TechnicianPartUsageService {
     }
   }
 
-  static bool isPending(dynamic statusValue) {
-    final status = statusValue?.toString().toLowerCase() ?? "";
+  static String getStatusDescription(dynamic statusValue) {
+    final status = normalizeStatus(statusValue);
 
-    return status == "requested" || status == "pending";
+    switch (status) {
+      case "requested":
+        return "Permintaan sparepart sedang menunggu persetujuan admin.";
+
+      case "approved":
+        return "Permintaan sparepart telah disetujui admin dan dapat digunakan untuk perbaikan.";
+
+      case "rejected":
+        return "Permintaan sparepart ditolak admin. Periksa catatan admin untuk mengetahui alasannya.";
+
+      case "used":
+        return "Sparepart sudah digunakan untuk proses perbaikan.";
+
+      case "canceled":
+        return "Permintaan sparepart dibatalkan.";
+
+      default:
+        return "Status permintaan sparepart belum dikenali.";
+    }
+  }
+
+  static bool isPending(dynamic statusValue) {
+    return normalizeStatus(statusValue) == "requested";
   }
 
   static bool isApproved(dynamic statusValue) {
-    final status = statusValue?.toString().toLowerCase() ?? "";
-
-    return status == "approved";
+    return normalizeStatus(statusValue) == "approved";
   }
 
   static bool isRejected(dynamic statusValue) {
-    final status = statusValue?.toString().toLowerCase() ?? "";
-
-    return status == "rejected";
+    return normalizeStatus(statusValue) == "rejected";
   }
 
   static bool isUsed(dynamic statusValue) {
-    final status = statusValue?.toString().toLowerCase() ?? "";
-
-    return status == "used" || status == "issued";
+    return normalizeStatus(statusValue) == "used";
   }
 
   static bool isCanceled(dynamic statusValue) {
-    final status = statusValue?.toString().toLowerCase() ?? "";
-
-    return status == "cancelled" || status == "canceled";
+    return normalizeStatus(statusValue) == "canceled";
   }
 
   // ---------------------------------------------------------------------------
@@ -288,10 +514,11 @@ class TechnicianPartUsageService {
 
     if (data == null) return "-";
 
-    final part = _extractMap(data["part"]);
+    final part = _asMap(data["part"]);
 
     return part?["name"]?.toString() ??
         data["part_name"]?.toString() ??
+        data["partName"]?.toString() ??
         data["name"]?.toString() ??
         "-";
   }
@@ -301,10 +528,11 @@ class TechnicianPartUsageService {
 
     if (data == null) return "-";
 
-    final part = _extractMap(data["part"]);
+    final part = _asMap(data["part"]);
 
     return part?["sku"]?.toString() ??
         data["part_sku"]?.toString() ??
+        data["partSku"]?.toString() ??
         data["sku"]?.toString() ??
         "-";
   }
@@ -314,14 +542,57 @@ class TechnicianPartUsageService {
 
     if (data == null) return 0;
 
-    final part = _extractMap(data["part"]);
+    final part = _asMap(data["part"]);
 
     final possibleStock = part?["stock"] ??
+        data["part_stock"] ??
+        data["partStock"] ??
         data["stock"] ??
         data["available_stock"] ??
         data["qty_available"];
 
     return int.tryParse(possibleStock?.toString() ?? "") ?? 0;
+  }
+
+  static String getAdminNote(dynamic value) {
+    final data = _extractMap(value);
+
+    if (data == null) return "";
+
+    return cleanAdminNote(
+      data["note"] ??
+          data["admin_note"] ??
+          data["adminNote"] ??
+          data["reason"] ??
+          data["rejection_reason"] ??
+          data["rejectionReason"],
+    );
+  }
+
+  static String getRejectedReason(dynamic value) {
+    final data = _extractMap(value);
+
+    if (data == null) return "";
+
+    if (!isRejected(data["status"])) {
+      return "";
+    }
+
+    return getAdminNote(data);
+  }
+
+  static String cleanAdminNote(dynamic value) {
+    final note = value?.toString().trim() ?? "";
+
+    if (note.isEmpty) return "";
+
+    return note
+        .replaceAll("[ADMIN-REJECT]", "")
+        .replaceAll("[ADMIN REJECT]", "")
+        .replaceAll("[ADMIN-APPROVE]", "")
+        .replaceAll("[ADMIN APPROVE]", "")
+        .replaceAll("[ADMIN]", "")
+        .trim();
   }
 
   // ---------------------------------------------------------------------------
@@ -382,7 +653,7 @@ class TechnicianPartUsageService {
     | ID utama
     |--------------------------------------------------------------------------
     */
-    usage["id"] ??= usage["part_usage_id"];
+    usage["id"] ??= usage["part_usage_id"] ?? usage["partUsageId"];
 
     /*
     |--------------------------------------------------------------------------
@@ -400,10 +671,6 @@ class TechnicianPartUsageService {
     |--------------------------------------------------------------------------
     | Relasi service booking / job teknisi
     |--------------------------------------------------------------------------
-    |
-    | Ini penting agar sparepart bisa ditampilkan lebih akurat pada job teknisi,
-    | bukan hanya dicocokkan lewat damage_report_id.
-    |
     */
     usage["service_booking_id"] ??=
         usage["booking_id"] ??
@@ -444,8 +711,40 @@ class TechnicianPartUsageService {
         usage["jumlah"] ??
         0;
 
-    usage["status"] ??= "requested";
+    usage["status"] = normalizeStatus(
+      usage["status"] ?? usage["status_value"] ?? usage["statusValue"],
+    );
+
     usage["status_label"] = getStatusLabel(usage["status"]);
+    usage["status_description"] = getStatusDescription(usage["status"]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Convenience flags untuk UI
+    |--------------------------------------------------------------------------
+    */
+    usage["is_pending"] = isPending(usage["status"]);
+    usage["is_approved"] = isApproved(usage["status"]);
+    usage["is_rejected"] = isRejected(usage["status"]);
+    usage["is_used"] = isUsed(usage["status"]);
+    usage["is_canceled"] = isCanceled(usage["status"]);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Convenience display field untuk UI
+    |--------------------------------------------------------------------------
+    */
+    usage["part_name"] ??= getPartName(usage);
+    usage["part_sku"] ??= getPartSku(usage);
+    usage["part_stock"] ??= getPartStock(usage);
+
+    final cleanNote = getAdminNote(usage);
+
+    usage["admin_note_clean"] = cleanNote;
+
+    if (isRejected(usage["status"])) {
+      usage["rejection_reason"] = cleanNote;
+    }
 
     return usage;
   }
@@ -497,6 +796,23 @@ class TechnicianPartUsageService {
         if (nestedPartUsages is List) {
           return nestedPartUsages;
         }
+
+        final nestedPartUsagesCamel = nestedData["partUsages"];
+        if (nestedPartUsagesCamel is List) {
+          return nestedPartUsagesCamel;
+        }
+
+        final nestedTechnicianPartUsages =
+            nestedData["technician_part_usages"];
+        if (nestedTechnicianPartUsages is List) {
+          return nestedTechnicianPartUsages;
+        }
+
+        final nestedTechnicianPartUsagesCamel =
+            nestedData["technicianPartUsages"];
+        if (nestedTechnicianPartUsagesCamel is List) {
+          return nestedTechnicianPartUsagesCamel;
+        }
       }
 
       final rows = data["rows"];
@@ -527,6 +843,21 @@ class TechnicianPartUsageService {
       final partUsages = data["part_usages"];
       if (partUsages is List) {
         return partUsages;
+      }
+
+      final partUsagesCamel = data["partUsages"];
+      if (partUsagesCamel is List) {
+        return partUsagesCamel;
+      }
+
+      final technicianPartUsages = data["technician_part_usages"];
+      if (technicianPartUsages is List) {
+        return technicianPartUsages;
+      }
+
+      final technicianPartUsagesCamel = data["technicianPartUsages"];
+      if (technicianPartUsagesCamel is List) {
+        return technicianPartUsagesCamel;
       }
 
       final usage = data["usage"];
@@ -584,6 +915,102 @@ class TechnicianPartUsageService {
     }
 
     return null;
+  }
+
+  static Map<String, dynamic>? _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+
+    return null;
+  }
+
+  static Map<String, dynamic>? _extractDamageReportMap(dynamic value) {
+    final data = _asMap(value);
+
+    if (data == null) {
+      return null;
+    }
+
+    final damageReport = data["damage_report"] ??
+        data["damageReport"] ??
+        data["report"] ??
+        data["damage"];
+
+    final mappedDamageReport = _asMap(damageReport);
+
+    if (mappedDamageReport != null) {
+      return mappedDamageReport;
+    }
+
+    final nestedData = _asMap(data["data"]);
+
+    if (nestedData != null) {
+      final nestedResult = _extractDamageReportMap(nestedData);
+
+      if (nestedResult != null) {
+        return nestedResult;
+      }
+    }
+
+    if (_extractPartUsageListFromMap(data).isNotEmpty) {
+      return data;
+    }
+
+    return null;
+  }
+
+  static List<dynamic> _extractPartUsageListFromMap(
+    Map<String, dynamic> data,
+  ) {
+    final possibleKeys = [
+      "part_usages",
+      "partUsages",
+      "technician_part_usages",
+      "technicianPartUsages",
+      "usages",
+      "usage_items",
+      "usageItems",
+    ];
+
+    for (final key in possibleKeys) {
+      final value = data[key];
+
+      if (value is List) {
+        return value;
+      }
+    }
+
+    final nestedData = _asMap(data["data"]);
+
+    if (nestedData != null) {
+      return _extractPartUsageListFromMap(nestedData);
+    }
+
+    return <dynamic>[];
+  }
+
+  static int _countByStatus(
+    List<Map<String, dynamic>> usages,
+    String expectedStatus,
+  ) {
+    return usages.where((usage) {
+      return normalizeStatus(usage["status"]) == expectedStatus;
+    }).length;
+  }
+
+  static int? _intValue(dynamic value) {
+    if (value == null) return null;
+
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is num) return value.toInt();
+
+    return int.tryParse(value.toString());
   }
 
   static String _extractErrorMessage(

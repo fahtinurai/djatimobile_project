@@ -227,7 +227,9 @@ class _MechanicTasksPageState extends State<MechanicTasksPage> {
   }
 
   Map<String, dynamic>? _getDamageReport(Map<String, dynamic> job) {
-    return _asMap(job["damage_report"]);
+    return _asMap(job["damage_report"]) ??
+        _asMap(job["damageReport"]) ??
+        _asMap(job["report"]);
   }
 
   Map<String, dynamic>? _getVehicle(Map<String, dynamic> job) {
@@ -732,6 +734,122 @@ class _MechanicTasksPageState extends State<MechanicTasksPage> {
     );
   }
 
+  Color _getPartUsageProgressColor(Map<String, dynamic> job) {
+    final summary = TechnicianPartUsageService.extractPartUsageSummaryFromJob(job);
+    final total = int.tryParse(summary["total"]?.toString() ?? "0") ?? 0;
+    final requested =
+        int.tryParse(summary["requested"]?.toString() ?? "0") ?? 0;
+    final approved = int.tryParse(summary["approved"]?.toString() ?? "0") ?? 0;
+    final rejected = int.tryParse(summary["rejected"]?.toString() ?? "0") ?? 0;
+
+    if (total <= 0) {
+      return Colors.white54;
+    }
+
+    if (rejected > 0) {
+      return Colors.redAccent;
+    }
+
+    if (requested > 0) {
+      return const Color(0xFFF9A825);
+    }
+
+    if (approved == total) {
+      return Colors.greenAccent;
+    }
+
+    return Colors.lightBlueAccent;
+  }
+
+  IconData _getPartUsageProgressIcon(Map<String, dynamic> job) {
+    final summary = TechnicianPartUsageService.extractPartUsageSummaryFromJob(job);
+    final total = int.tryParse(summary["total"]?.toString() ?? "0") ?? 0;
+    final requested =
+        int.tryParse(summary["requested"]?.toString() ?? "0") ?? 0;
+    final approved = int.tryParse(summary["approved"]?.toString() ?? "0") ?? 0;
+    final rejected = int.tryParse(summary["rejected"]?.toString() ?? "0") ?? 0;
+
+    if (total <= 0) {
+      return Icons.inventory_2_outlined;
+    }
+
+    if (rejected > 0) {
+      return Icons.warning_amber_rounded;
+    }
+
+    if (requested > 0) {
+      return Icons.pending_actions_rounded;
+    }
+
+    if (approved == total) {
+      return Icons.check_circle_outline_rounded;
+    }
+
+    return Icons.info_outline_rounded;
+  }
+
+  Widget _partUsageMiniInfo({
+    required Map<String, dynamic> job,
+  }) {
+    final label = TechnicianPartUsageService.getPartUsageProgressLabelFromJob(job);
+    final color = _getPartUsageProgressColor(job);
+    final icon = _getPartUsageProgressIcon(job);
+    final note =
+        TechnicianPartUsageService.latestRejectedPartUsageNoteFromJob(job);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.075),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: color.withOpacity(0.18),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            color: color,
+            size: 17,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "SPAREPART REQUEST",
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  note.isEmpty ? label : "$label • $note",
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 11,
+                    height: 1.25,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildJobCard(Map<String, dynamic> job) {
     final bookingId = job["id"]?.toString() ?? "-";
     final reportId = job["damage_report_id"]?.toString() ??
@@ -879,6 +997,8 @@ class _MechanicTasksPageState extends State<MechanicTasksPage> {
                   value: estimatedFinishAt == "-" ? "-" : estimatedFinishAt,
                   fullWidth: true,
                 ),
+                const SizedBox(height: 8),
+                _partUsageMiniInfo(job: job),
               ],
             ),
           ),
@@ -1237,7 +1357,17 @@ class TaskDetailsPage extends StatefulWidget {
 }
 
 class _TaskDetailsPageState extends State<TaskDetailsPage> {
-  Map<String, dynamic> get job => widget.job;
+  static const String baseUrl = "http://10.0.2.2:8000/api";
+
+  late Map<String, dynamic> _job;
+
+  Map<String, dynamic> get job => _job;
+
+  @override
+  void initState() {
+    super.initState();
+    _job = Map<String, dynamic>.from(widget.job);
+  }
 
   Map<String, dynamic>? _asMap(dynamic value) {
     if (value is Map<String, dynamic>) {
@@ -1251,8 +1381,130 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
     return null;
   }
 
+  dynamic _safeJsonDecode(String body) {
+    if (body.trim().isEmpty) {
+      return null;
+    }
+
+    try {
+      return jsonDecode(body);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic>? _parseJobDetail(String body) {
+    final decoded = _safeJsonDecode(body);
+
+    if (decoded is Map<String, dynamic>) {
+      final data = decoded["data"];
+
+      if (data is Map<String, dynamic>) {
+        return data;
+      }
+
+      if (data is Map) {
+        return Map<String, dynamic>.from(data);
+      }
+
+      final job = decoded["job"];
+
+      if (job is Map<String, dynamic>) {
+        return job;
+      }
+
+      if (job is Map) {
+        return Map<String, dynamic>.from(job);
+      }
+
+      final booking = decoded["booking"];
+
+      if (booking is Map<String, dynamic>) {
+        return booking;
+      }
+
+      if (booking is Map) {
+        return Map<String, dynamic>.from(booking);
+      }
+
+      return decoded;
+    }
+
+    if (decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+
+    return null;
+  }
+
+  String _errorFromResponse(http.Response response, String fallback) {
+    final decoded = _safeJsonDecode(response.body);
+
+    if (decoded is Map<String, dynamic>) {
+      final message = decoded["message"]?.toString();
+
+      if (message != null && message.isNotEmpty) {
+        return message;
+      }
+    }
+
+    return "$fallback. Status: ${response.statusCode}";
+  }
+
+  Future<void> _reloadJobDetail() async {
+    final bookingId = _getServiceBookingId();
+
+    if (bookingId == null || bookingId <= 0) {
+      return;
+    }
+
+    try {
+      final token = await AuthService.getToken();
+
+      if (token == null || token.isEmpty) {
+        throw Exception("Token tidak ditemukan. Silakan login ulang.");
+      }
+
+      final response = await http.get(
+        Uri.parse("$baseUrl/technician/service-jobs/$bookingId"),
+        headers: {
+          "Accept": "application/json",
+          "Authorization": "Bearer $token",
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final latestJob = _parseJobDetail(response.body);
+
+        if (!mounted || latestJob == null) return;
+
+        setState(() {
+          _job = latestJob;
+        });
+      } else {
+        throw Exception(
+          _errorFromResponse(
+            response,
+            "Gagal memperbarui detail job",
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst("Exception: ", "")),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Map<String, dynamic>? _getDamageReport() {
-    return _asMap(job["damage_report"]);
+    return _asMap(job["damage_report"]) ??
+        _asMap(job["damageReport"]) ??
+        _asMap(job["report"]);
   }
 
   Map<String, dynamic>? _getVehicle() {
@@ -1282,6 +1534,17 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
         job["damage_report_id"] ??
         job["damageReportId"] ??
         report?["id"];
+
+    return int.tryParse(rawId?.toString() ?? "");
+  }
+
+  int? _getServiceBookingId() {
+    final rawId =
+        job["id"] ??
+        job["service_booking_id"] ??
+        job["booking_id"] ??
+        job["serviceBookingId"] ??
+        job["bookingId"];
 
     return int.tryParse(rawId?.toString() ?? "");
   }
@@ -1701,6 +1964,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
       builder: (context) {
         return RequestPartUsageModal(
           damageReportId: damageReportId,
+          serviceBookingId: _getServiceBookingId(),
           unitName: _getUnitName(),
         );
       },
@@ -1709,6 +1973,10 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
     if (!mounted) return;
 
     if (result == true) {
+      await _reloadJobDetail();
+
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Request sparepart berhasil dikirim ke admin."),
@@ -1972,6 +2240,304 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _getPartUsages() {
+    return TechnicianPartUsageService.extractPartUsagesFromJob(job);
+  }
+
+  Map<String, dynamic> _getPartUsageSummary() {
+    return TechnicianPartUsageService.extractPartUsageSummaryFromJob(job);
+  }
+
+  bool _hasRejectedPartUsage() {
+    return TechnicianPartUsageService.hasRejectedPartUsageFromJob(job);
+  }
+
+  String _latestRejectedPartUsageNote() {
+    return TechnicianPartUsageService.latestRejectedPartUsageNoteFromJob(job);
+  }
+
+  Color _partUsageStatusColor(dynamic statusValue) {
+    final status = TechnicianPartUsageService.normalizeStatus(statusValue);
+
+    switch (status) {
+      case "approved":
+        return Colors.greenAccent;
+      case "rejected":
+        return Colors.redAccent;
+      case "requested":
+        return const Color(0xFFF9A825);
+      case "used":
+        return Colors.lightBlueAccent;
+      case "canceled":
+        return Colors.white54;
+      default:
+        return Colors.white60;
+    }
+  }
+
+  IconData _partUsageStatusIcon(dynamic statusValue) {
+    final status = TechnicianPartUsageService.normalizeStatus(statusValue);
+
+    switch (status) {
+      case "approved":
+        return Icons.check_circle_outline_rounded;
+      case "rejected":
+        return Icons.cancel_outlined;
+      case "requested":
+        return Icons.pending_actions_rounded;
+      case "used":
+        return Icons.inventory_outlined;
+      case "canceled":
+        return Icons.block_outlined;
+      default:
+        return Icons.info_outline_rounded;
+    }
+  }
+
+  Widget _detailPartUsageProgressPanel() {
+    final usages = _getPartUsages();
+    final summary = _getPartUsageSummary();
+
+    final total = int.tryParse(summary["total"]?.toString() ?? "0") ?? 0;
+    final requested =
+        int.tryParse(summary["requested"]?.toString() ?? "0") ?? 0;
+    final approved = int.tryParse(summary["approved"]?.toString() ?? "0") ?? 0;
+    final rejected = int.tryParse(summary["rejected"]?.toString() ?? "0") ?? 0;
+
+    final hasRejected = _hasRejectedPartUsage();
+    final latestRejectedNote = _latestRejectedPartUsageNote();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _detailPartUsageSummaryRow(
+          total: total,
+          requested: requested,
+          approved: approved,
+          rejected: rejected,
+        ),
+        if (hasRejected) ...[
+          const SizedBox(height: 12),
+          _detailTextBlock(
+            title: "Rejected Sparepart Request",
+            value: latestRejectedNote.isEmpty
+                ? "Ada permintaan sparepart yang ditolak admin. Periksa daftar request di bawah."
+                : "Ada permintaan sparepart yang ditolak admin. Alasan: $latestRejectedNote",
+            icon: Icons.warning_amber_rounded,
+            color: Colors.redAccent,
+          ),
+        ],
+        const SizedBox(height: 12),
+        if (usages.isEmpty)
+          _detailTextBlock(
+            title: "Request History",
+            value: "Belum ada request sparepart untuk pekerjaan ini.",
+            icon: Icons.inventory_2_outlined,
+            color: Colors.white54,
+          )
+        else
+          Column(
+            children: [
+              for (int i = 0; i < usages.length; i++) ...[
+                _detailPartUsageCard(usages[i]),
+                if (i != usages.length - 1) const SizedBox(height: 10),
+              ],
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _detailPartUsageSummaryRow({
+    required int total,
+    required int requested,
+    required int approved,
+    required int rejected,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: _detailPartUsageSummaryTile(
+            title: "Total",
+            value: "$total",
+            icon: Icons.inventory_2_outlined,
+            color: Colors.white70,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _detailPartUsageSummaryTile(
+            title: "Pending",
+            value: "$requested",
+            icon: Icons.pending_actions_rounded,
+            color: const Color(0xFFF9A825),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _detailPartUsageSummaryTile(
+            title: "Approved",
+            value: "$approved",
+            icon: Icons.check_circle_outline_rounded,
+            color: Colors.greenAccent,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _detailPartUsageSummaryTile(
+            title: "Rejected",
+            value: "$rejected",
+            icon: Icons.cancel_outlined,
+            color: Colors.redAccent,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _detailPartUsageSummaryTile({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: color.withOpacity(0.16),
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            icon,
+            color: color,
+            size: 17,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailPartUsageCard(Map<String, dynamic> usage) {
+    final status = TechnicianPartUsageService.normalizeStatus(usage["status"]);
+    final statusLabel = TechnicianPartUsageService.getStatusLabel(status);
+    final statusDescription =
+        TechnicianPartUsageService.getStatusDescription(status);
+
+    final color = _partUsageStatusColor(status);
+    final icon = _partUsageStatusIcon(status);
+
+    final partName = TechnicianPartUsageService.getPartName(usage);
+    final partSku = TechnicianPartUsageService.getPartSku(usage);
+    final partStock = TechnicianPartUsageService.getPartStock(usage);
+    final qty = TechnicianPartUsageService.extractQty(usage);
+    final adminNote = TechnicianPartUsageService.getAdminNote(usage);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.075),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: color.withOpacity(0.18),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _detailIconBadge(
+            icon: icon,
+            color: color,
+            size: 42,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        partName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          height: 1.25,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _detailStatusChip(statusLabel, color),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  "SKU: $partSku • Qty: $qty • Stock: $partStock",
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  statusDescription,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    height: 1.4,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (adminNote.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  _detailTextBlock(
+                    title: status == "rejected"
+                        ? "Alasan Penolakan Admin"
+                        : "Catatan Admin",
+                    value: adminNote,
+                    icon: Icons.notes_rounded,
+                    color: color,
+                  ),
+                ],
               ],
             ),
           ),
@@ -2303,6 +2869,11 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                     ),
                   ],
                 ),
+              ),
+              _detailSectionCard(
+                title: "Sparepart Request Progress",
+                icon: Icons.inventory_2_outlined,
+                child: _detailPartUsageProgressPanel(),
               ),
               _detailSectionCard(
                 title: "Technician Tools",
@@ -3381,34 +3952,6 @@ class _TaskUpdatePageState extends State<TaskUpdatePage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            "Fitur cetak laporan bisa disambungkan nanti.",
-                          ),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.print, size: 18),
-                    label: const Text(
-                      "CETAK LAPORAN",
-                      style: TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: Colors.white24),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ],
           ),
@@ -3507,11 +4050,13 @@ class _TaskUpdatePageState extends State<TaskUpdatePage> {
 // -------------------------------------------------------------------
 class RequestPartUsageModal extends StatefulWidget {
   final int damageReportId;
+  final int? serviceBookingId;
   final String unitName;
 
   const RequestPartUsageModal({
     super.key,
     required this.damageReportId,
+    this.serviceBookingId,
     required this.unitName,
   });
 
@@ -3708,6 +4253,8 @@ class _RequestPartUsageModalState extends State<RequestPartUsageModal> {
       await TechnicianPartUsageService.requestPartUsage(
         partId: partId,
         damageReportId: widget.damageReportId,
+        serviceBookingId: widget.serviceBookingId,
+        bookingId: widget.serviceBookingId,
         qty: qty,
         note: _noteController.text.trim(),
       );
