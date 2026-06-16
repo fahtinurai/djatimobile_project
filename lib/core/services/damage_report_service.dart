@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:djatimobile_project/core/services/auth_service.dart';
 
 class DamageReportService {
-  static const String baseUrl = "http://192.168.0.106:8000/api";
+  static const String baseUrl = "http://10.0.2.2:8000/api";
   static const String backendBaseUrl = "http://192.168.18.195:8000";
   static const String storageBaseUrl = "http://192.168.18.195:8000/storage";
 

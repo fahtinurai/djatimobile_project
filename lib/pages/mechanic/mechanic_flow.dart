@@ -42,7 +42,7 @@ class MechanicTasksPage extends StatefulWidget {
 }
 
 class _MechanicTasksPageState extends State<MechanicTasksPage> {
-  static const String baseUrl = "http://192.168.0.106:8000/api";
+  static const String baseUrl = "http://10.0.2.2:8000/api";
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -2573,7 +2573,7 @@ class TaskUpdatePage extends StatefulWidget {
 }
 
 class _TaskUpdatePageState extends State<TaskUpdatePage> {
-  static const String baseUrl = "http://192.168.0.106:8000/api";
+  static const String baseUrl = "http://10.0.2.2:8000/api";
 
   final TextEditingController _noteController = TextEditingController();
 

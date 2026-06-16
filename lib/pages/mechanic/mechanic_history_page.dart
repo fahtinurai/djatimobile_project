@@ -33,7 +33,7 @@ class MechanicHistoryPage extends StatefulWidget {
 }
 
 class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
-  static const String baseUrl = "http://192.168.0.106:8000/api";
+  static const String baseUrl = "http://10.0.2.2:8000/api";
 
   bool _isLoading = true;
   String? _errorMessage;

@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:djatimobile_project/core/services/auth_service.dart';
 
 class AnalyticsService {
-  static const String baseUrl = "http://192.168.0.106:8000/api";
+  static const String baseUrl = "http://10.0.2.2:8000/api";
 
   static Future<Map<String, dynamic>> getDriverAnalytics() async {
     final token = await AuthService.getToken();

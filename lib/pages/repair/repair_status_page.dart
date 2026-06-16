@@ -257,6 +257,66 @@ class _RepairStatusPageState extends State<RepairStatusPage>
     return null;
   }
 
+
+  String _normalizeBookingStatus(dynamic value) {
+    final raw = value?.toString().trim().toLowerCase() ?? "";
+
+    if (raw.isEmpty || raw == "null" || raw == "-") {
+      return "requested";
+    }
+
+    final status = raw.replaceAll(" ", "_").replaceAll("-", "_");
+
+    switch (status) {
+      case "pending":
+      case "waiting":
+      case "reported":
+      case "menunggu":
+        return "requested";
+      case "scheduled":
+      case "terjadwal":
+        return "approved";
+      case "ongoing":
+      case "proses":
+      case "diproses":
+        return "in_progress";
+      case "finished":
+      case "selesai":
+        return "completed";
+      case "reject":
+      case "ditolak":
+        return "rejected";
+      case "cancelled":
+      case "dibatalkan":
+        return "canceled";
+      default:
+        return status;
+    }
+  }
+
+  String _getBookingStatus(Map<String, dynamic> booking) {
+    final report = _getDamageReport(booking);
+
+    final nestedBooking = _asMap(booking["booking"]) ??
+        _asMap(booking["service_booking"]) ??
+        _asMap(booking["serviceBooking"]) ??
+        _asMap(report?["booking"]) ??
+        _asMap(report?["service_booking"]) ??
+        _asMap(report?["serviceBooking"]);
+
+    final rawStatus = booking["service_booking_status"] ??
+        booking["booking_status"] ??
+        booking["status"] ??
+        nestedBooking?["service_booking_status"] ??
+        nestedBooking?["booking_status"] ??
+        nestedBooking?["status"] ??
+        report?["service_booking_status"] ??
+        report?["booking_status"] ??
+        report?["status"];
+
+    return _normalizeBookingStatus(rawStatus);
+  }
+
   List<Map<String, dynamic>> _getCandidateMaps(Map<String, dynamic> booking) {
     final result = <Map<String, dynamic>>[];
 
@@ -815,7 +875,9 @@ class _RepairStatusPageState extends State<RepairStatusPage>
   }
 
   String _getStatusLabel(String status) {
-    switch (status.toLowerCase()) {
+    final normalizedStatus = _normalizeBookingStatus(status);
+
+    switch (normalizedStatus) {
       case "requested":
       case "pending":
       case "reported":
@@ -855,7 +917,9 @@ class _RepairStatusPageState extends State<RepairStatusPage>
   }
 
   String _getStatusDescription(String status) {
-    switch (status.toLowerCase()) {
+    final normalizedStatus = _normalizeBookingStatus(status);
+
+    switch (normalizedStatus) {
       case "requested":
       case "pending":
       case "reported":
@@ -895,7 +959,9 @@ class _RepairStatusPageState extends State<RepairStatusPage>
   }
 
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
+    final normalizedStatus = _normalizeBookingStatus(status);
+
+    switch (normalizedStatus) {
       case "requested":
       case "pending":
       case "reported":
@@ -935,7 +1001,9 @@ class _RepairStatusPageState extends State<RepairStatusPage>
   }
 
   IconData _getStatusIcon(String status) {
-    switch (status.toLowerCase()) {
+    final normalizedStatus = _normalizeBookingStatus(status);
+
+    switch (normalizedStatus) {
       case "requested":
       case "pending":
       case "reported":
@@ -975,12 +1043,11 @@ class _RepairStatusPageState extends State<RepairStatusPage>
   }
 
   bool _canCancelBooking(String status) {
-    final lowerStatus = status.toLowerCase();
+    final normalizedStatus = _normalizeBookingStatus(status);
 
-    return lowerStatus == "requested" ||
-        lowerStatus == "approved" ||
-        lowerStatus == "scheduled" ||
-        lowerStatus == "rescheduled";
+    return normalizedStatus == "requested" ||
+        normalizedStatus == "approved" ||
+        normalizedStatus == "rescheduled";
   }
 
   Future<void> _confirmCancelBooking(Map<String, dynamic> booking) async {
@@ -1049,7 +1116,7 @@ class _RepairStatusPageState extends State<RepairStatusPage>
       return;
     }
 
-    final status = booking["status"]?.toString().toLowerCase() ?? "";
+    final status = _getBookingStatus(booking);
 
     if (!_canCancelBooking(status)) {
       _showSnackBar("Booking ini tidak bisa dibatalkan.", Colors.red);
@@ -1106,7 +1173,7 @@ class _RepairStatusPageState extends State<RepairStatusPage>
 
     final technicianName = _getTechnicianName(booking);
     final statusLabel = _getStatusLabel(
-      booking["status"]?.toString() ?? "requested",
+      _getBookingStatus(booking),
     );
 
     logs.add("Unit: ${_getUnitName(booking)}");
@@ -1226,7 +1293,7 @@ class _RepairStatusPageState extends State<RepairStatusPage>
   bool _statusMatchesFilter(Map<String, dynamic> booking) {
     if (_selectedFilter == "all") return true;
 
-    final status = booking["status"]?.toString().toLowerCase() ?? "requested";
+    final status = _getBookingStatus(booking);
 
     if (_selectedFilter == "requested") {
       return [
@@ -1289,7 +1356,7 @@ class _RepairStatusPageState extends State<RepairStatusPage>
       final serial = _getSerialNumber(booking).toLowerCase();
       final technician = _getTechnicianName(booking).toLowerCase();
       final status = _getStatusLabel(
-        booking["status"]?.toString() ?? "requested",
+        _getBookingStatus(booking),
       ).toLowerCase();
 
       final matchSearch = keyword.isEmpty ||
@@ -1305,7 +1372,7 @@ class _RepairStatusPageState extends State<RepairStatusPage>
 
   int _countStatus(List<String> statuses) {
     return _bookings.where((booking) {
-      final status = booking["status"]?.toString().toLowerCase() ?? "";
+      final status = _getBookingStatus(booking);
       return statuses.contains(status);
     }).length;
   }
@@ -1651,7 +1718,7 @@ class _RepairStatusPageState extends State<RepairStatusPage>
     final damageType = _getDamageType(booking);
     final description = _getDescription(booking);
 
-    final status = booking["status"]?.toString() ?? "requested";
+    final status = _getBookingStatus(booking);
     final priority = booking["priority"]?.toString() ?? "medium";
 
     final preferredAt = _formatDateTime(booking["preferred_at"]);
@@ -1952,7 +2019,7 @@ class _RepairStatusPageState extends State<RepairStatusPage>
       "completed",
       "finished",
       "selesai",
-    ].contains((booking["status"]?.toString() ?? "").toLowerCase());
+    ].contains(_getBookingStatus(booking));
 
     final hasRawMaintenanceData = currentHourMeter != "-" ||
         totalRepairTime != "-" ||

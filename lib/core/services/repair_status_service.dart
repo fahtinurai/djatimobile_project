@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:djatimobile_project/core/services/auth_service.dart';
 
 class RepairStatusService {
-  static const String baseUrl = "http://192.168.0.106:8000/api";
+  static const String baseUrl = "http://10.0.2.2:8000/api";
   static const String backendBaseUrl = "http://192.168.18.195:8000";
   static const String storageBaseUrl = "http://192.168.18.195:8000/storage";
 
@@ -332,10 +332,17 @@ class RepairStatusService {
     }
 
     _setFirst(normalized, "status", mapsByPriority, [
-      "status",
+      "service_booking_status",
       "booking_status",
+      "status",
       "computed_status",
     ]);
+
+    final normalizedStatus = _getNormalizedStatus(normalized);
+
+    normalized["status"] = normalizedStatus;
+    normalized["booking_status"] = normalizedStatus;
+    normalized["service_booking_status"] = normalizedStatus;
 
     _setFirst(normalized, "priority", mapsByPriority, ["priority"]);
     _setFirst(normalized, "preferred_at", mapsByPriority, ["preferred_at"]);
@@ -806,6 +813,12 @@ class RepairStatusService {
     normalized["current_ma"] ??= normalized["ma"];
     normalized["mechanical_availability"] ??= normalized["ma"];
 
+    final normalizedStatus = _getNormalizedStatus(normalized);
+
+    normalized["status"] = normalizedStatus;
+    normalized["booking_status"] = normalizedStatus;
+    normalized["service_booking_status"] = normalizedStatus;
+
     return normalized;
   }
 
@@ -912,21 +925,66 @@ class RepairStatusService {
     return "$storageBaseUrl/$cleanPath";
   }
 
+  static String _normalizeStatusValue(dynamic value) {
+    final raw = value?.toString().trim().toLowerCase() ?? "";
+
+    if (raw.isEmpty || raw == "null" || raw == "-") {
+      return "menunggu";
+    }
+
+    final status = raw.replaceAll(" ", "_").replaceAll("-", "_");
+
+    switch (status) {
+      case "pending":
+      case "waiting":
+      case "reported":
+      case "menunggu":
+        return "requested";
+      case "scheduled":
+      case "terjadwal":
+        return "approved";
+      case "ongoing":
+      case "proses":
+      case "diproses":
+        return "in_progress";
+      case "finished":
+      case "selesai":
+      case "done":
+      case "closed":
+        return "completed";
+      case "reject":
+      case "ditolak":
+        return "rejected";
+      case "cancelled":
+      case "dibatalkan":
+        return "canceled";
+      default:
+        return status;
+    }
+  }
+
   static String _getNormalizedStatus(Map<String, dynamic> item) {
     final damageReport = _extractDamageReport(item);
     final booking = _extractBooking(item);
 
-    return booking?["status"]?.toString() ??
-        item["booking_status"]?.toString() ??
-        damageReport?["computed_status"]?.toString() ??
-        damageReport?["status"]?.toString() ??
-        item["computed_status"]?.toString() ??
-        item["status"]?.toString() ??
+    final rawStatus = booking?["service_booking_status"] ??
+        booking?["booking_status"] ??
+        booking?["status"] ??
+        item["service_booking_status"] ??
+        item["booking_status"] ??
+        damageReport?["service_booking_status"] ??
+        damageReport?["booking_status"] ??
+        damageReport?["computed_status"] ??
+        damageReport?["status"] ??
+        item["computed_status"] ??
+        item["status"] ??
         "menunggu";
+
+    return _normalizeStatusValue(rawStatus);
   }
 
   static String _statusLabel(String status) {
-    switch (status.toLowerCase()) {
+    switch (_normalizeStatusValue(status)) {
       case "menunggu":
       case "reported":
       case "pending":
