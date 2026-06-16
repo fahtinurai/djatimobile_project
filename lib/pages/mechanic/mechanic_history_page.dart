@@ -50,7 +50,6 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
     "completed",
     "in_progress",
     "ready",
-    "canceled",
   ];
 
   @override
@@ -101,6 +100,22 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
             jobs = data["data"];
           }
         }
+
+        jobs.sort((a, b) {
+          final aMap = (a is Map<String, dynamic>) ? a : (a is Map ? Map<String, dynamic>.from(a) : <String, dynamic>{});
+          final bMap = (b is Map<String, dynamic>) ? b : (b is Map ? Map<String, dynamic>.from(b) : <String, dynamic>{});
+          
+          final aDateStr = aMap["updated_at"]?.toString() ?? aMap["created_at"]?.toString() ?? "";
+          final bDateStr = bMap["updated_at"]?.toString() ?? bMap["created_at"]?.toString() ?? "";
+
+          DateTime aDate = DateTime.fromMillisecondsSinceEpoch(0);
+          DateTime bDate = DateTime.fromMillisecondsSinceEpoch(0);
+
+          try { if (aDateStr.isNotEmpty) aDate = DateTime.parse(aDateStr); } catch (_) {}
+          try { if (bDateStr.isNotEmpty) bDate = DateTime.parse(bDateStr); } catch (_) {}
+
+          return bDate.compareTo(aDate);
+        });
 
         List<dynamic> partUsages = [];
 
@@ -814,12 +829,6 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
       return status == "approved" || status == "scheduled" || status == "rescheduled";
     }
 
-    if (_selectedFilter == "canceled") {
-      return status == "canceled" ||
-          status == "cancelled" ||
-          status == "dibatalkan";
-    }
-
     return true;
   }
 
@@ -861,8 +870,6 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
         return "Progress";
       case "ready":
         return "Ready";
-      case "canceled":
-        return "Canceled";
       default:
         return value;
     }

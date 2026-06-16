@@ -1357,7 +1357,7 @@ class TaskDetailsPage extends StatefulWidget {
 }
 
 class _TaskDetailsPageState extends State<TaskDetailsPage> {
-  static const String baseUrl = "http://10.0.2.2:8000/api";
+  static const String baseUrl = "https://proting3-backend-production.up.railway.app/api";
 
   late Map<String, dynamic> _job;
 
@@ -3501,7 +3501,7 @@ class _TaskUpdatePageState extends State<TaskUpdatePage> {
             content: Text(
               _isStartAction
                   ? "Job berhasil dimulai."
-                  : "Job berhasil diselesaikan. Data terbaru dikirim ke backend.",
+                  : "Job berhasil diselesaikan. Data terbaru berhasil disimpan.",
             ),
             backgroundColor: Colors.green,
           ),
@@ -3946,8 +3946,7 @@ class _TaskUpdatePageState extends State<TaskUpdatePage> {
                       _updateMessage(
                         icon: Icons.storage_outlined,
                         color: Colors.white54,
-                        message:
-                            "Setelah COMPLETE SERVICE ditekan, backend perlu menyimpan data ini ke service booking/repair history dan update current_hour_meter serta current_ma pada kendaraan.",
+                        message: "PASTIKAN SEMUA DATA SUDAH BENAR SEBELUM MENGIRIM!",           
                       ),
                     ],
                   ),
