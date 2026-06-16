@@ -16,8 +16,8 @@ class TaskDetailPage extends StatelessWidget {
     this.onUpdateStatus,
   });
 
-  static const String backendBaseUrl = "http://192.168.18.195:8000";
-  static const String storageBaseUrl = "http://192.168.18.195:8000/storage";
+  static const String backendBaseUrl = "https://proting3-backend-production.up.railway.app";
+  static const String storageBaseUrl = "https://proting3-backend-production.up.railway.app/storage";
 
   static const Color bgColor = Color(0xFF0F1115);
   static const Color cardColor = Color(0xFF1A1D24);

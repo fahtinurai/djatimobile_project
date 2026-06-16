@@ -42,7 +42,7 @@ class MechanicTasksPage extends StatefulWidget {
 }
 
 class _MechanicTasksPageState extends State<MechanicTasksPage> {
-  static const String baseUrl = "http://10.0.2.2:8000/api";
+  static const String baseUrl = "https://proting3-backend-production.up.railway.app/api";
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -1338,11 +1338,11 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
     var path = raw.replaceAll("\\", "/");
 
     if (path.startsWith("/storage/")) {
-      return "http://192.168.18.195:8000$path";
+      return "https://proting3-backend-production.up.railway.app$path";
     }
 
     if (path.startsWith("storage/")) {
-      return "http://192.168.18.195:8000/$path";
+      return "https://proting3-backend-production.up.railway.app/$path";
     }
 
     if (path.startsWith("public/")) {
@@ -1353,7 +1353,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
       path = path.substring(1);
     }
 
-    return "http://192.168.18.195:8000/storage/$path";
+    return "https://proting3-backend-production.up.railway.app/storage/$path";
   }
 
   String? _getDamageImageUrl() {
@@ -2573,7 +2573,7 @@ class TaskUpdatePage extends StatefulWidget {
 }
 
 class _TaskUpdatePageState extends State<TaskUpdatePage> {
-  static const String baseUrl = "http://10.0.2.2:8000/api";
+  static const String baseUrl = "https://proting3-backend-production.up.railway.app/api";
 
   final TextEditingController _noteController = TextEditingController();
 

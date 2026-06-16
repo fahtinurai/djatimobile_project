@@ -14,7 +14,7 @@ class MechanicProfilePage extends StatefulWidget {
 }
 
 class _MechanicProfilePageState extends State<MechanicProfilePage> {
-  static const String baseUrl = "http://10.0.2.2:8000/api";
+  static const String baseUrl = "https://proting3-backend-production.up.railway.app/api";
 
   static const Color bgColor = Color(0xFF0F1115);
   static const Color cardColor = Color(0xFF1A1D24);

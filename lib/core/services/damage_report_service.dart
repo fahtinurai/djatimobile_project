@@ -6,9 +6,9 @@ import 'package:http/http.dart' as http;
 import 'package:djatimobile_project/core/services/auth_service.dart';
 
 class DamageReportService {
-  static const String baseUrl = "http://10.0.2.2:8000/api";
-  static const String backendBaseUrl = "http://192.168.18.195:8000";
-  static const String storageBaseUrl = "http://192.168.18.195:8000/storage";
+  static const String baseUrl = "https://proting3-backend-production.up.railway.app/api";
+  static const String backendBaseUrl = "https://proting3-backend-production.up.railway.app";
+  static const String storageBaseUrl = "https://proting3-backend-production.up.railway.app/storage";
 
   /// Submit laporan kerusakan driver.
   ///

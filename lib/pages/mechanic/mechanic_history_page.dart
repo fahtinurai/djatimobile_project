@@ -33,7 +33,7 @@ class MechanicHistoryPage extends StatefulWidget {
 }
 
 class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
-  static const String baseUrl = "http://10.0.2.2:8000/api";
+  static const String baseUrl = "https://proting3-backend-production.up.railway.app/api";
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -269,11 +269,11 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
     var path = raw.replaceAll("\\", "/");
 
     if (path.startsWith("/storage/")) {
-      return "http://192.168.18.195:8000$path";
+      return "https://proting3-backend-production.up.railway.app$path";
     }
 
     if (path.startsWith("storage/")) {
-      return "http://192.168.18.195:8000/$path";
+      return "https://proting3-backend-production.up.railway.app/$path";
     }
 
     if (path.startsWith("public/")) {
@@ -284,7 +284,7 @@ class _MechanicHistoryPageState extends State<MechanicHistoryPage> {
       path = path.substring(1);
     }
 
-    return "http://192.168.18.195:8000/storage/$path";
+    return "https://proting3-backend-production.up.railway.app/storage/$path";
   }
 
   String? _getDamageImageUrl(Map<String, dynamic> job) {
