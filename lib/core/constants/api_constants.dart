@@ -1,5 +1,5 @@
 class ApiConstants {
-  static const String baseUrl = "http://10.0.2.2:8000/api";
+  static const String baseUrl = "https://proting3-backend-production.up.railway.app/api";
 
   // AUTH
   static const String login = "/login";

@@ -10,7 +10,7 @@ class RepairStatusPage extends StatefulWidget {
 
 class _RepairStatusPageState extends State<RepairStatusPage>
     with WidgetsBindingObserver {
-  static const String storageBaseUrl = "http://192.168.18.195:8000/storage";
+  static const String storageBaseUrl = "https://proting3-backend-production.up.railway.app/storage";
 
   static const Color bgColor = Color(0xFF0F1115);
   static const Color cardColor = Color(0xFF1A1D24);
@@ -766,7 +766,7 @@ class _RepairStatusPageState extends State<RepairStatusPage>
     final cleanPath = raw.startsWith("/") ? raw.substring(1) : raw;
 
     if (cleanPath.startsWith("storage/")) {
-      return "http://192.168.18.195:8000/$cleanPath";
+      return "https://proting3-backend-production.up.railway.app/$cleanPath";
     }
 
     return "$storageBaseUrl/$cleanPath";

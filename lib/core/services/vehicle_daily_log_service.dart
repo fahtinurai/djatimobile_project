@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:djatimobile_project/core/services/auth_service.dart';
 
 class VehicleDailyLogService {
-  static const String baseUrl = "http://10.0.2.2:8000/api";
+  static const String baseUrl = "https://proting3-backend-production.up.railway.app/api";
 
   static Future<List<dynamic>> getLogs() async {
     final token = await AuthService.getToken();
